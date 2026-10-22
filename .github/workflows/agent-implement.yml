@@ -1,8 +1,11 @@
 name: Agent Implement
 
-# Happy path: labeling a leaf issue `agent:implement` runs the implementation
-# agent on an isolated branch, then opens a draft PR to main that closes the
-# issue. Preflight gates and failure handling land in a follow-up issue.
+# Labeling a leaf issue `agent:implement` runs preflight gates (refuse
+# sub-issues, PRD-shaped issues, and issues already closed by an open
+# collaborator PR), then the implementation agent on an isolated branch, then
+# opens a draft PR to main that closes the issue. Any failure posts a reason
+# comment with the workflow-run link and relabels the issue `agent:blocked`;
+# retrying means re-adding the trigger label.
 on:
   issues:
     types: [labeled]
@@ -25,6 +28,10 @@ jobs:
       ISSUE_NUMBER: ${{ github.event.issue.number }}
       ISSUE_TITLE: ${{ github.event.issue.title }}
       TARGET_BRANCH: main
+      # Where fail() records failure_reason.txt for the failure handler.
+      OUTPUT_DIR: ${{ runner.temp }}
+      # Link posted in the blocked-issue comment on failure.
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       # Provider/model config lives here, not in code (user story: tune cost
       # and quality by editing env vars only).
       AGENT_PROVIDER: zai
@@ -33,25 +40,12 @@ jobs:
       GH_REPO: ${{ github.repository }}
 
     steps:
-      # The trigger label is consumed by the run: retries re-add it (parent
-      # issue decision), so a finished or blocked issue carries only the
-      # lifecycle label.
-      - name: Transition to in-progress
-        run: |
-          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:implement" || true
-          gh issue edit "$ISSUE_NUMBER" --add-label "agent:in-progress"
-
       - name: Checkout target branch
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
           token: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
-
-      - name: Configure agent identity
-        run: |
-          git config user.name "tenderagent[bot]"
-          git config user.email "tenderagent[bot]@users.noreply.github.com"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -61,6 +55,24 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Gates run before any state changes: a refused issue never shows
+      # in-progress, it goes straight to blocked via the failure handler.
+      - name: Preflight gates
+        run: npx tsx .sandcastle/agent-workflows/implement/preflight.ts
+
+      # The trigger label is consumed by the run: retries re-add it (parent
+      # issue decision), so a finished or blocked issue carries only the
+      # lifecycle label.
+      - name: Transition to in-progress
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:implement" || true
+          gh issue edit "$ISSUE_NUMBER" --add-label "agent:in-progress"
+
+      - name: Configure agent identity
+        run: |
+          git config user.name "tenderagent[bot]"
+          git config user.email "tenderagent[bot]@users.noreply.github.com"
 
       - name: Compute branch name
         id: branch
@@ -80,7 +92,6 @@ jobs:
         env:
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
           BRANCH: ${{ steps.branch.outputs.name }}
-          OUTPUT_DIR: ${{ runner.temp }}
         run: npx tsx .sandcastle/agent-workflows/implement/implement.ts
 
       - name: Push branch
@@ -101,6 +112,21 @@ jobs:
             echo "Implemented by the agent implement workflow."
           } > "$body_file"
           gh pr create --draft --base "$TARGET_BRANCH" --head "$BRANCH" --title "$title" --body-file "$body_file"
+
+      # Failure handling: post the reason comment (with the run link) and
+      # relabel the issue agent:blocked, removing the trigger label. The
+      # reporter is dependency-free, so it also runs when npm ci or the agent
+      # setup itself failed; a fresh checkout guarantees the script is present.
+      - name: Checkout for failure reporter
+        if: failure()
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Report failure and relabel as blocked
+        if: failure()
+        run: npx -y tsx@^4 .sandcastle/agent-workflows/shared/report-failure.ts
 
       - name: Remove in-progress label
         if: always()
