@@ -14,17 +14,15 @@ When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the 
 
 Edit the "Label in our tracker" column to match whatever vocabulary you actually use.
 
-## What the labels trigger
+## The `agent:*` lifecycle vocabulary
 
-Applying `ready-for-agent` to an issue is the single triage action that starts the automation: the [Triage Bridge](../../.github/workflows/bridge.yml) adds the `agent:implement` lifecycle label, which fires the implement workflow. The bridge reads the triage vocabulary but never modifies or removes it — triage labels stay owned by people. Decisions run against the issue's current labels, so removing `ready-for-agent` before the bridge runs cancels the handoff, and re-applying it to a blocked issue is a valid retry.
+Lifecycle labels (see the [glossary](../../GLOSSARY.md)) mark where an issue or PR sits in the agent pipeline. They are written by automation — the bridge and the agent workflows — with two human touches: `agent:review` is applied by a maintainer to request a review, and a trigger label is re-applied by hand when retrying. The boundary cuts one way only: automation writes nothing outside the `agent:` prefix (enforced by `assertOnlyAgentLabels` in `.sandcastle/agent-workflows/shared/failure.ts`), so the human triage vocabulary above is never written, modified, or removed by a workflow.
 
-## Smoke-testing the chain
+| Label                 | Surface   | Written by                     | Meaning                                                                                |
+| --------------------- | --------- | ------------------------------ | -------------------------------------------------------------------------------------- |
+| `agent:implement`     | issue     | Bridge (automation)            | Trigger: the triage decision was bridged; fires the implement workflow, which consumes it |
+| `agent:in-progress`   | issue, PR | Workflows (automation)         | An agent run is live; removed when the run ends, success or failure                     |
+| `agent:review`        | PR        | Maintainer (human)             | Trigger: requests the automated review; fires the review workflow, which consumes it     |
+| `agent:blocked`       | issue, PR | Failure handlers (automation)  | A run failed; the subject carries a comment with the reason and the workflow-run link    |
 
-Validate the full chain (bridge → agent run → draft PR) on a staging leaf issue before trusting it:
-
-1. Prerequisites: the `AGENT_PAT` and `ZAI_API_KEY` repo secrets exist (maintainer-side setup; without `AGENT_PAT` the bridge's label add cannot cascade into the implement workflow at all). Optional but recommended: a `REVIEW_PAT` repo secret holding a fine-grained PAT from a dedicated account — the review workflow uses it to post formal review verdicts, which GitHub refuses to the PR's author (the pipeline's PRs are authored by `AGENT_PAT`); without it review findings degrade to a PR comment.
-2. Create a disposable leaf issue (no sub-issues, no PRD sections) and label it `ready-for-agent`.
-3. Expect, in order: a **Triage Bridge** run that adds `agent:implement` → an **Agent Implement** run that swaps it for `agent:in-progress` → a draft PR titled `Fix #<n>: …` referencing the issue.
-4. Close out: clean up the staging issue, branch, and draft PR; on failure the issue carries `agent:blocked` with a reason comment linking the run.
-
-The first recorded live validation of this procedure is tracked in #7.
+Transitions, the completion-signal convention, failure modes with recovery recipes, and the manual smoke-test path are documented in the [agent pipeline runbook](./agent-pipeline.md).

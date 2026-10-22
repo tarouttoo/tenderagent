@@ -25,3 +25,11 @@ _Avoid_: status labels, workflow tags
 **Bridge**:
 The automation that translates a human triage decision into the machine lifecycle — the piece that turns `ready-for-agent` into `agent:implement`.
 _Avoid_: trigger, relay
+
+**Completion signal**:
+The exact marker (`<promise>COMPLETE</promise>`) an AFK agent emits when it considers its task done; the orchestrator scans the agent's output for it and ends the run early instead of burning the iteration limit.
+_Avoid_: stop word, sentinel token
+
+**Staging issue**:
+A disposable leaf issue created only to exercise the pipeline end to end; never merged, its branch and draft PR cleaned up afterwards.
+_Avoid_: test issue, canary
