@@ -31,8 +31,20 @@ describe("bridgeDecision", () => {
   });
 
   it("skips closed issues", () => {
-    expect(bridgeDecision({ ...input, issueState: "closed" })).toMatchObject({
-      act: false,
+    for (const closed of ["closed", "CLOSED"]) {
+      expect(bridgeDecision({ ...input, issueState: closed })).toMatchObject({
+        act: false,
+      });
+    }
+  });
+
+  // gh issue view --json state reports the GraphQL enum ("OPEN"), not the
+  // REST casing ("open") — found live by the #7 smoke test, where the bridge
+  // skipped every open issue. The comparison must be case-insensitive.
+  it("bridges an issue whose state arrives GraphQL-uppercase", () => {
+    expect(bridgeDecision({ ...input, issueState: "OPEN" })).toEqual({
+      act: true,
+      add: ["agent:implement"],
     });
   });
 

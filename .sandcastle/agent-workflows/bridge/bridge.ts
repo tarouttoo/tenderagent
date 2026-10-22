@@ -31,7 +31,8 @@ const ENGAGED_LABELS = [TRIGGER_LABEL, IN_PROGRESS_LABEL];
 export type BridgeInput = {
   /** Name of the label event that fired (`github.event.label.name`). */
   eventLabel: string;
-  /** Current issue state as reported by the API: "open" or "closed". */
+  /** Current issue state as reported by the API, case-insensitive: gh's GraphQL
+   *  reports "OPEN"/"CLOSED", REST reports "open"/"closed". */
   issueState: string;
   /** Current label names on the issue, as reported by the API. */
   issueLabels: string[];
@@ -63,7 +64,7 @@ export const bridgeDecision = (input: BridgeInput): BridgeVerdict => {
     };
   }
 
-  if (issueState !== "open") {
+  if (issueState.toLowerCase() !== "open") {
     return {
       act: false,
       reason: `Issue is ${issueState}; only open issues are implemented.`,

@@ -19,9 +19,17 @@ The human act of deciding which issues are ready, and for whom — owned by peop
 _Avoid_: grooming, prioritization
 
 **Lifecycle labels**:
-The `agent:*` labels (`agent:implement`, `agent:in-progress`, `agent:review`, `agent:blocked`) that mark where an issue or PR sits in the agent pipeline; written exclusively by automation and kept separate from the human triage vocabulary.
+The `agent:*` labels (`agent:implement`, `agent:in-progress`, `agent:review`, `agent:blocked`) that mark where an issue or PR sits in the agent pipeline; written by automation — a maintainer only applies `agent:review` and re-adds trigger labels on retry — and kept separate from the human triage vocabulary, which automation never writes.
 _Avoid_: status labels, workflow tags
 
 **Bridge**:
 The automation that translates a human triage decision into the machine lifecycle — the piece that turns `ready-for-agent` into `agent:implement`.
 _Avoid_: trigger, relay
+
+**Completion signal**:
+The exact marker (`<promise>COMPLETE</promise>`) an AFK agent emits when it considers its task done; the orchestrator scans the agent's output for it and ends the run early instead of burning the iteration limit.
+_Avoid_: stop word, sentinel token
+
+**Staging issue**:
+A disposable leaf issue created only to exercise the pipeline end to end; never merged, its branch and draft PR cleaned up afterwards.
+_Avoid_: test issue, canary
