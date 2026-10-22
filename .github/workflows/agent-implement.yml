@@ -1,0 +1,107 @@
+name: Agent Implement
+
+# Happy path: labeling a leaf issue `agent:implement` runs the implementation
+# agent on an isolated branch, then opens a draft PR to main that closes the
+# issue. Preflight gates and failure handling land in a follow-up issue.
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  implement:
+    if: github.event.label.name == 'agent:implement'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # One run per issue at a time; parallel label events queue instead of racing.
+    concurrency:
+      group: agent-implement-issue-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    env:
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      ISSUE_TITLE: ${{ github.event.issue.title }}
+      TARGET_BRANCH: main
+      # Provider/model config lives here, not in code (user story: tune cost
+      # and quality by editing env vars only).
+      AGENT_PROVIDER: zai
+      AGENT_MODEL: glm-5.3-flash
+      GH_TOKEN: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      # The trigger label is consumed by the run: retries re-add it (parent
+      # issue decision), so a finished or blocked issue carries only the
+      # lifecycle label.
+      - name: Transition to in-progress
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:implement" || true
+          gh issue edit "$ISSUE_NUMBER" --add-label "agent:in-progress"
+
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Configure agent identity
+        run: |
+          git config user.name "tenderagent[bot]"
+          git config user.email "tenderagent[bot]@users.noreply.github.com"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compute branch name
+        id: branch
+        run: |
+          branch=$(npx tsx .sandcastle/agent-workflows/implement/branch.ts)
+          echo "name=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Create agent branch
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: git checkout -b "$BRANCH"
+
+      - name: Install pi CLI
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+      - name: Run implementation agent
+        env:
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+          OUTPUT_DIR: ${{ runner.temp }}
+        run: npx tsx .sandcastle/agent-workflows/implement/implement.ts
+
+      - name: Push branch
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: git push --force origin "$BRANCH"
+
+      - name: Open draft PR
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          title="Fix #${ISSUE_NUMBER}: ${ISSUE_TITLE}"
+          title="${title:0:256}"
+          body_file="${RUNNER_TEMP}/pr-body.md"
+          {
+            echo "Closes #${ISSUE_NUMBER}"
+            echo
+            echo "Implemented by the agent implement workflow."
+          } > "$body_file"
+          gh pr create --draft --base "$TARGET_BRANCH" --head "$BRANCH" --title "$title" --body-file "$body_file"
+
+      - name: Remove in-progress label
+        if: always()
+        run: gh issue edit "$ISSUE_NUMBER" --remove-label "agent:in-progress" || true
