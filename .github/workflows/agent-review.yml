@@ -1,0 +1,98 @@
+name: Agent Review
+
+# Labeling a PR `agent:review` runs the review agent (pi CLI, ZAI provider via
+# env vars) grounded in the PR diff and review context. The agent emits a
+# structured payload; the workflow extracts it (unit-tested extraction, no
+# live LLM in tests), posts the findings as a regular PR review on the
+# maintainer's review surface, and marks the draft PR ready. Any failure posts
+# a reason comment with the workflow-run link and relabels the PR
+# `agent:blocked` — consistent with the implement workflow's failure path;
+# retrying means re-adding the trigger label.
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  review:
+    if: github.event.label.name == 'agent:review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # One run per PR at a time; parallel label events queue instead of racing.
+    concurrency:
+      group: agent-review-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      # Where fail() records failure_reason.txt for the failure handler, and
+      # where the agent-run step leaves review-payload.json for the poster.
+      OUTPUT_DIR: ${{ runner.temp }}
+      # Link posted in the blocked-PR comment on failure.
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      # Provider/model config lives here, not in code (user story: tune cost
+      # and quality by editing env vars only).
+      AGENT_PROVIDER: zai
+      AGENT_MODEL: glm-5.3-flash
+      GH_TOKEN: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The trigger label is consumed by the run: retries re-add it, so a
+      # reviewed or blocked PR carries only the lifecycle label.
+      - name: Transition to in-progress
+        run: |
+          gh pr edit "$PR_NUMBER" --remove-label "agent:review" || true
+          gh pr edit "$PR_NUMBER" --add-label "agent:in-progress"
+
+      - name: Install pi CLI
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+      - name: Run review agent and extract payload
+        env:
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+        run: npx tsx .sandcastle/agent-workflows/review/review.ts
+
+      - name: Post review findings
+        run: npx tsx .sandcastle/agent-workflows/review/post-review.ts
+
+      - name: Mark PR ready
+        run: gh pr ready "$PR_NUMBER"
+
+      # Failure handling: post the reason comment (with the run link) and
+      # relabel the PR agent:blocked, removing the trigger label. Runs on
+      # cancellation too — the trigger label is already consumed by then, so a
+      # cancelled run must not leave the PR label-less and silent. The
+      # reporter is dependency-free, so it also runs when npm ci or the agent
+      # setup itself failed; a fresh checkout guarantees the script is present.
+      - name: Checkout for failure reporter
+        if: ${{ !success() }}
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Report failure and relabel as blocked
+        if: ${{ !success() }}
+        run: npx -y tsx@^4 .sandcastle/agent-workflows/review/report-failure.ts
+
+      - name: Remove in-progress label
+        if: always()
+        run: gh pr edit "$PR_NUMBER" --remove-label "agent:in-progress" || true

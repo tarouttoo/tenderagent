@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertOnlyAgentLabels,
   blockedLabelOps,
+  formatBlockedComment,
   formatFailureComment,
 } from "./failure";
 
@@ -94,5 +95,46 @@ describe("blockedLabelOps", () => {
     const ops = blockedLabelOps();
     expect(() => assertOnlyAgentLabels(ops.remove)).not.toThrow();
     expect(() => assertOnlyAgentLabels(ops.add)).not.toThrow();
+  });
+
+  it("parameterizes the trigger label for PR workflows", () => {
+    const ops = blockedLabelOps("agent:review");
+    expect(ops.remove).toEqual(["agent:review", "agent:in-progress"]);
+    expect(ops.add).toEqual(["agent:blocked"]);
+  });
+});
+
+describe("formatBlockedComment", () => {
+  const prInput = {
+    subject: { kind: "pr" as const, number: 12 },
+    reason: "The review agent emitted no parseable review payload.",
+    runUrl: "https://github.com/tarouttoo/tenderagent/actions/runs/987654321",
+    retryLabel: "agent:review",
+  };
+
+  it("names the PR in the header", () => {
+    expect(formatBlockedComment(prInput)).toContain("PR #12");
+  });
+
+  it("renders the reason as a bullet and links the run", () => {
+    const comment = formatBlockedComment(prInput);
+    expect(comment).toContain(
+      "- The review agent emitted no parseable review payload.",
+    );
+    expect(comment).toContain(
+      "[View workflow run](https://github.com/tarouttoo/tenderagent/actions/runs/987654321)",
+    );
+  });
+
+  it("explains the retry convention for its trigger label", () => {
+    const comment = formatBlockedComment(prInput);
+    expect(comment).toContain("`agent:review`");
+    expect(comment).toMatch(/re-add/i);
+  });
+
+  it("only ever writes agent:* retry labels (invariant)", () => {
+    expect(() =>
+      formatBlockedComment({ ...prInput, retryLabel: "ready-for-agent" }),
+    ).toThrow(/automation only writes agent:/i);
   });
 });
