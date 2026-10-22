@@ -19,7 +19,7 @@ The human act of deciding which issues are ready, and for whom — owned by peop
 _Avoid_: grooming, prioritization
 
 **Lifecycle labels**:
-The `agent:*` labels (`agent:implement`, `agent:in-progress`, `agent:review`, `agent:blocked`) that mark where an issue or PR sits in the agent pipeline; written exclusively by automation and kept separate from the human triage vocabulary.
+The `agent:*` labels (`agent:implement`, `agent:in-progress`, `agent:review`, `agent:blocked`) that mark where an issue or PR sits in the agent pipeline; written by automation — a maintainer only applies `agent:review` and re-adds trigger labels on retry — and kept separate from the human triage vocabulary, which automation never writes.
 _Avoid_: status labels, workflow tags
 
 **Bridge**:
