@@ -23,5 +23,5 @@ The `agent:*` labels (`agent:implement`, `agent:in-progress`, `agent:review`, `a
 _Avoid_: status labels, workflow tags
 
 **Bridge**:
-The automation that translates a human triage decision into the machine lifecycle: labeling an issue `ready-for-agent` makes the bridge add `agent:implement`, which triggers the implementation agent.
+The automation that translates a human triage decision into the machine lifecycle — the piece that turns `ready-for-agent` into `agent:implement`.
 _Avoid_: trigger, relay
