@@ -1,0 +1,57 @@
+name: Triage Bridge
+
+# The bridge: the maintainer's single triage action — labeling a leaf issue
+# `ready-for-agent` — adds the `agent:implement` trigger label, which fires the
+# Agent Implement workflow. The bridge only ever writes agent:* lifecycle
+# labels; the human triage vocabulary is read-only here (never modified or
+# removed). All decisions run against the issue's *current* state and labels,
+# so rapid triage toggles resolve to the latest intent, and a triage label
+# removed before the bridge runs is honoured (the labeling is not replayed).
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  bridge:
+    if: github.event.label.name == 'ready-for-agent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # One bridge run per issue at a time and the latest one wins: a rapid
+    # ready-for-agent toggle burst cancels stale runs before they can apply
+    # the trigger twice. The job is a single idempotent check-then-label step,
+    # so cancellation cannot leave half-applied state. This group is separate
+    # from the implement workflow's: the bridge must not queue behind a
+    # running agent, and its skip guards (not serialization) are what prevent
+    # duplicate implement runs.
+    concurrency:
+      group: bridge-issue-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    permissions:
+      # contents: read for the checkout (unlisted scopes are none under a
+      # restricted permissions block); the only write this job performs is on
+      # issues — and only agent:* lifecycle labels, via the bridge script.
+      contents: read
+      issues: write
+
+    env:
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      EVENT_LABEL: ${{ github.event.label.name }}
+      GH_REPO: ${{ github.repository }}
+      # AGENT_PAT on purpose, with no fallback: the label add must fire an
+      # issues event that triggers the Agent Implement workflow, and events
+      # triggered by the default GITHUB_TOKEN never start new workflow runs.
+      # A missing secret fails this step visibly instead of silently breaking
+      # the bridge → implement cascade.
+      GH_TOKEN: ${{ secrets.AGENT_PAT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Dependency-free on purpose (node builtins + pure modules only), like
+      # the failure reporter: npx tsx runs it without npm ci, so the bridge
+      # stays a fast single-purpose job.
+      - name: Bridge the triage label to agent:implement
+        run: npx -y tsx@^4 .sandcastle/agent-workflows/bridge/bridge.ts
