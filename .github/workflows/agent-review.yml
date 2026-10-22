@@ -87,6 +87,10 @@ jobs:
         if: steps.review.outputs.skipped != 'true'
         env:
           OUTPUT_DIR: ${{ runner.temp }}
+          # Findings must land even when the review identity can't write: the
+          # fallback comment runs under the workflow token, whose pull-requests
+          # write the permissions block above guarantees.
+          FALLBACK_GH_TOKEN: ${{ github.token }}
         run: npx tsx .sandcastle/agent-workflows/review/post-review.ts
 
       - name: Mark PR ready

@@ -11,6 +11,7 @@
  * Marking the PR ready is the workflow's next step, not this script's.
  */
 import * as fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import * as path from "node:path";
 import {
   fail,
@@ -25,6 +26,23 @@ import {
 } from "./payload";
 
 const prNumber = required("PR_NUMBER");
+
+/**
+ * gh under FALLBACK_GH_TOKEN when the workflow supplies one. The findings
+ * must land even when the review identity cannot write (a fine-grained
+ * REVIEW_PAT scoped without PR write gets "Resource not accessible" — found
+ * live by the #7 smoke test); the workflow token's write access is
+ * guaranteed by the job's permissions block.
+ */
+const ghFallback = (args: string[]): string => {
+  const override = process.env.FALLBACK_GH_TOKEN;
+  if (!override) return gh(args);
+  return execFileSync("gh", args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, GH_TOKEN: override },
+  });
+};
 
 try {
   const payloadPath = path.join(outputDir(), "review-payload.json");
@@ -74,7 +92,7 @@ try {
     console.log(`Comment fallback: ${plan.reason}`);
   }
 
-  gh(["pr", "comment", prNumber, "--body-file", bodyFile]);
+  ghFallback(["pr", "comment", prNumber, "--body-file", bodyFile]);
   console.log(`Posted the review findings as a PR comment on PR #${prNumber}.`);
 } catch (error) {
   fail(error instanceof Error ? error.message : String(error));

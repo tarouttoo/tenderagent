@@ -142,28 +142,35 @@ describe("extractReviewPayload", () => {
 });
 
 describe("reviewEventFor", () => {
-  it("maps approve → approve", () => {
-    expect(reviewEventFor("approve")).toBe("approve");
+  it("maps approve → the --approve flag", () => {
+    expect(reviewEventFor("approve")).toBe("--approve");
   });
 
-  it("maps request_changes → request-changes (gh flag spelling)", () => {
-    expect(reviewEventFor("request_changes")).toBe("request-changes");
+  it("maps request_changes → the --request-changes flag", () => {
+    expect(reviewEventFor("request_changes")).toBe("--request-changes");
   });
 
-  it("maps comment → comment", () => {
-    expect(reviewEventFor("comment")).toBe("comment");
+  it("maps comment → the --comment flag", () => {
+    expect(reviewEventFor("comment")).toBe("--comment");
   });
 });
 
 describe("reviewPostPlan", () => {
   it("posts a regular PR review honoring the verdict when allowed", () => {
+    // The verdict is a gh CLI flag, not a positional argument — the bare word
+    // form made `gh pr review` abort with "accepts at most 1 arg(s), received
+    // 2" (found live by the #7 smoke test on PR #12).
     expect(reviewPostPlan("approve", false)).toEqual({
       command: "review",
-      flag: "approve",
+      flag: "--approve",
     });
     expect(reviewPostPlan("request_changes", false)).toEqual({
       command: "review",
-      flag: "request-changes",
+      flag: "--request-changes",
+    });
+    expect(reviewPostPlan("comment", false)).toEqual({
+      command: "review",
+      flag: "--comment",
     });
   });
 
