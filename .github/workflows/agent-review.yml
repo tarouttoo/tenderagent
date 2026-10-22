@@ -25,6 +25,10 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
+      # gh pr ready's markPullRequestReadyForReview mutation is refused to the
+      # GITHUB_TOKEN with only pull-requests: write — the known cli/cli#8910
+      # bug; adding contents: write is the reported workaround.
+      contents: write
 
     env:
       PR_NUMBER: ${{ github.event.pull_request.number }}

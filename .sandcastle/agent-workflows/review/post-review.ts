@@ -83,10 +83,30 @@ try {
       process.exit(0);
     } catch (error) {
       // Defensive: even with the author check above, GitHub can refuse the
-      // review; the findings must still land on the PR.
+      // review (a REVIEW_PAT scoped without PR write gets "Resource not
+      // accessible"); the findings must still land as a formal review if any
+      // write-capable identity exists before degrading to a comment.
       console.error(
         `gh pr review ${prNumber} ${plan.flag} failed: ${error instanceof Error ? error.message : String(error)}`,
       );
+      try {
+        ghFallback([
+          "pr",
+          "review",
+          prNumber,
+          plan.flag,
+          "--body-file",
+          bodyFile,
+        ]);
+        console.log(
+          `Posted a "${plan.flag}" PR review on PR #${prNumber} under the fallback token.`,
+        );
+        process.exit(0);
+      } catch (fallbackError) {
+        console.error(
+          `The fallback-token review failed too: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
+        );
+      }
     }
   } else {
     console.log(`Comment fallback: ${plan.reason}`);
