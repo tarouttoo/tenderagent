@@ -22,7 +22,7 @@ Applying `ready-for-agent` to an issue is the single triage action that starts t
 
 Validate the full chain (bridge → agent run → draft PR) on a staging leaf issue before trusting it:
 
-1. Prerequisites: the `AGENT_PAT` and `ZAI_API_KEY` repo secrets exist (maintainer-side setup; without `AGENT_PAT` the bridge's label add cannot cascade into the implement workflow at all).
+1. Prerequisites: the `AGENT_PAT` and `ZAI_API_KEY` repo secrets exist (maintainer-side setup; without `AGENT_PAT` the bridge's label add cannot cascade into the implement workflow at all). Optional but recommended: a `REVIEW_PAT` repo secret holding a fine-grained PAT from a dedicated account — the review workflow uses it to post formal review verdicts, which GitHub refuses to the PR's author (the pipeline's PRs are authored by `AGENT_PAT`); without it review findings degrade to a PR comment.
 2. Create a disposable leaf issue (no sub-issues, no PRD sections) and label it `ready-for-agent`.
 3. Expect, in order: a **Triage Bridge** run that adds `agent:implement` → an **Agent Implement** run that swaps it for `agent:in-progress` → a draft PR titled `Fix #<n>: …` referencing the issue.
 4. Close out: clean up the staging issue, branch, and draft PR; on failure the issue carries `agent:blocked` with a reason comment linking the run.

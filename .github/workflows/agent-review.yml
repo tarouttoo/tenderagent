@@ -37,7 +37,14 @@ jobs:
       # and quality by editing env vars only).
       AGENT_PROVIDER: zai
       AGENT_MODEL: glm-5.3-flash
-      GH_TOKEN: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+      # Token ladder for the review surface: REVIEW_PAT is the review
+      # identity — a dedicated account that did not author the PR. GitHub
+      # refuses a formal review by the PR author, and the pipeline's PRs are
+      # authored by AGENT_PAT, so the review agent needs its own identity to
+      # post a real gh pr review verdict; without REVIEW_PAT the run falls
+      # back to AGENT_PAT/GITHUB_TOKEN and post-review.ts degrades to a PR
+      # comment instead of failing.
+      GH_TOKEN: ${{ secrets.REVIEW_PAT || secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
 
     steps:
