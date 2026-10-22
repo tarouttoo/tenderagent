@@ -34,13 +34,12 @@ jobs:
       # and quality by editing env vars only).
       AGENT_PROVIDER: zai
       AGENT_MODEL: glm-5.3-flash
-      # Token ladder for the review surface: REVIEW_PAT is the review
-      # identity — a dedicated account that did not author the PR. GitHub
-      # refuses a formal review by the PR author, and the pipeline's PRs are
-      # authored by AGENT_PAT, so the review agent needs its own identity to
-      # post a real gh pr review verdict; without REVIEW_PAT the run falls
-      # back to AGENT_PAT/GITHUB_TOKEN and post-review.ts degrades to a PR
-      # comment instead of failing.
+      # Review identity: used only by the agent run and the posting steps.
+      # GitHub refuses a formal review by the PR author, and the pipeline's
+      # PRs are authored by AGENT_PAT, so the review agent needs its own
+      # identity to post a real gh pr review verdict; without REVIEW_PAT the
+      # run falls back to AGENT_PAT/GITHUB_TOKEN and post-review.ts degrades
+      # to a PR comment instead of failing.
       GH_TOKEN: ${{ secrets.REVIEW_PAT || secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
 
@@ -59,9 +58,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The trigger label is consumed by the run: retries re-add it, so a
-      # reviewed or blocked PR carries only the lifecycle label.
+      # Lifecycle label mutations use the workflow's own token, never the
+      # PAT: the job's permissions block guarantees the writes, so a
+      # mis-scoped REVIEW_PAT can degrade the review verdict but can never
+      # strand a PR in the pipeline (found by the live smoke of this PR).
       - name: Transition to in-progress
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh pr edit "$PR_NUMBER" --remove-label "agent:review" || true
           gh pr edit "$PR_NUMBER" --add-label "agent:in-progress"
@@ -88,6 +91,8 @@ jobs:
 
       - name: Mark PR ready
         if: steps.review.outputs.skipped != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: gh pr ready "$PR_NUMBER"
 
       # Failure handling: post the reason comment (with the run link) and
@@ -110,8 +115,11 @@ jobs:
         if: ${{ !success() }}
         env:
           OUTPUT_DIR: ${{ runner.temp }}
+          GH_TOKEN: ${{ github.token }}
         run: npx -y tsx@^4 .sandcastle/agent-workflows/review/report-failure.ts
 
       - name: Remove in-progress label
         if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: gh pr edit "$PR_NUMBER" --remove-label "agent:in-progress" || true
