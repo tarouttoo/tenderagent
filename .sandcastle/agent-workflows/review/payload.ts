@@ -107,17 +107,19 @@ export const extractReviewPayload = (
 };
 
 /**
- * The `gh pr review` event a verdict maps to. `request_changes` is the
- * agent's snake_case spelling; GitHub's flag spells it `--request-changes`.
+ * The `gh pr review` flag a verdict maps to. The verdict is a CLI flag, not a
+ * positional argument — `gh pr review <n> approve` aborts with "accepts at
+ * most 1 arg(s), received 2" (found live by the #7 smoke test). GitHub's flag
+ * spells the agent's snake_case verdict `--request-changes`.
  */
 export const reviewEventFor = (verdict: ReviewVerdict): string => {
   switch (verdict) {
     case "approve":
-      return "approve";
+      return "--approve";
     case "request_changes":
-      return "request-changes";
+      return "--request-changes";
     case "comment":
-      return "comment";
+      return "--comment";
   }
 };
 
