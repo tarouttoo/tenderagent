@@ -22,13 +22,13 @@ jobs:
       group: agent-review-pr-${{ github.event.pull_request.number }}
       cancel-in-progress: false
     permissions:
-      contents: read
+      # contents: write covers the cli/cli#8910 workaround: gh pr ready's
+      # markPullRequestReadyForReview mutation is refused to the GITHUB_TOKEN
+      # with only pull-requests: write. The review job never pushes code; the
+      # broader contents scope exists solely for that mutation.
+      contents: write
       issues: write
       pull-requests: write
-      # gh pr ready's markPullRequestReadyForReview mutation is refused to the
-      # GITHUB_TOKEN with only pull-requests: write — the known cli/cli#8910
-      # bug; adding contents: write is the reported workaround.
-      contents: write
 
     env:
       PR_NUMBER: ${{ github.event.pull_request.number }}
