@@ -72,6 +72,10 @@ Exhausted Actions minutes or a billing block is the opposite shape: **nothing ru
 - **Recovery**: fix the billing or spending-limit problem, clean any stale lifecycle labels the stalled attempt left (`agent:implement` the bridge applied, a stuck `agent:in-progress`), then re-add the trigger label. Cleaning is required, not cosmetic: the bridge refuses to engage an issue that still carries `agent:implement` or `agent:in-progress`.
 - **Scope note**: standard GitHub-hosted runners are free for public repositories. This mode only bites if the repo goes private, or paid runners hit a spending limit.
 
+### Loud failure: invalid provider key
+
+A `ZAI_API_KEY` the provider rejects behaves like credit exhaustion from the tracker's point of view — the run fails, the subject lands in `agent:blocked` with "no commits were made on the branch". The giveaway is in the run logs: the agent step prints the raw session dump containing `"errorMessage":"401 … Authentication Failed"`, and the run summary claims a completion signal — the scan matched the echoed prompt, not real work (found in the first live validation). Fix the secret's value, re-add the trigger label.
+
 ### Interrupted run: stuck `agent:in-progress`
 
 The workflows' cleanup steps run with `if: always()` and cover normal failure and cancellation, but a hard infrastructure kill (runner VM loss, an Actions incident) can bypass them, leaving the issue or PR labeled `agent:in-progress` with no live run behind it.
@@ -117,4 +121,4 @@ Validate the whole chain on a staging issue before trusting the pipeline, and re
 
 ### Live validations
 
-- (none recorded yet — the first is tracked in [#7](https://github.com/tarouttoo/tenderagent/issues/7))
+- **2026-10-22 — staging issue [#10](https://github.com/tarouttoo/tenderagent/issues/10), draft PR [#12](https://github.com/tarouttoo/tenderagent/pull/12)**: full chain green — `ready-for-agent` → bridge → implement (branch `agent/issue-10-smoke-add-agent-automation-line-to-readme`, commit attributed to `tenderagent[bot]`, draft PR `Closes #10`) → `agent:review` → formal review (verdict approve) → PR ready; artifacts closed and deleted, no labels left. The validation caught and fixed five pipeline defects en route: the bridge's OPEN-state casing (PR #11), the review verdict passed positionally (PR #13), the write-less `REVIEW_PAT` fallback (PR #13/#14), `gh pr ready` under `GITHUB_TOKEN` — cli/cli#8910 (PR #14), and an invalid-workflow startup failure from a duplicate permissions key (PR #15). Note: the formal review posted from the fallback identity (`github-actions[bot]`) because `REVIEW_PAT` is scoped without PR write on this repo; re-scope it if dedicated-account attribution matters.
