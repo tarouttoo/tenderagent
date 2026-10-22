@@ -28,9 +28,6 @@ jobs:
 
     env:
       PR_NUMBER: ${{ github.event.pull_request.number }}
-      # Where fail() records failure_reason.txt for the failure handler, and
-      # where the agent-run step leaves review-payload.json for the poster.
-      OUTPUT_DIR: ${{ runner.temp }}
       # Link posted in the blocked-PR comment on failure.
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       # Provider/model config lives here, not in code (user story: tune cost
@@ -76,12 +73,17 @@ jobs:
         id: review
         env:
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+          # fail() records failure_reason.txt here; review-payload.json for
+          # the poster lands here too. runner context is step-level only.
+          OUTPUT_DIR: ${{ runner.temp }}
         run: npx tsx .sandcastle/agent-workflows/review/review.ts
 
       # Skipped when the PR is closed/merged (the review step signals that via
       # its skipped output); a closed PR gets no review and no ready flip.
       - name: Post review findings
         if: steps.review.outputs.skipped != 'true'
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}
         run: npx tsx .sandcastle/agent-workflows/review/post-review.ts
 
       - name: Mark PR ready
@@ -93,16 +95,21 @@ jobs:
       # cancellation too — the trigger label is already consumed by then, so a
       # cancelled run must not leave the PR label-less and silent. The
       # reporter is dependency-free, so it also runs when npm ci or the agent
-      # setup itself failed; a fresh checkout guarantees the script is present.
+      # setup itself failed; a fresh checkout guarantees the script is
+      # present. Unlike the implement workflow (issues-triggered, so main is
+      # always its own version), this workflow runs from the PR's merge ref —
+      # the version-matched reporter lives on the PR head, not on main.
       - name: Checkout for failure reporter
         if: ${{ !success() }}
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.head.ref }}
           persist-credentials: false
 
       - name: Report failure and relabel as blocked
         if: ${{ !success() }}
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}
         run: npx -y tsx@^4 .sandcastle/agent-workflows/review/report-failure.ts
 
       - name: Remove in-progress label
