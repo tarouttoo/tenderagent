@@ -114,18 +114,20 @@ jobs:
           gh pr create --draft --base "$TARGET_BRANCH" --head "$BRANCH" --title "$title" --body-file "$body_file"
 
       # Failure handling: post the reason comment (with the run link) and
-      # relabel the issue agent:blocked, removing the trigger label. The
+      # relabel the issue agent:blocked, removing the trigger label. Runs on
+      # cancellation too — the trigger label is already consumed by then, so a
+      # cancelled run must not leave the issue label-less and silent. The
       # reporter is dependency-free, so it also runs when npm ci or the agent
       # setup itself failed; a fresh checkout guarantees the script is present.
       - name: Checkout for failure reporter
-        if: failure()
+        if: ${{ !success() }}
         uses: actions/checkout@v4
         with:
           ref: main
           token: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Report failure and relabel as blocked
-        if: failure()
+        if: ${{ !success() }}
         run: npx -y tsx@^4 .sandcastle/agent-workflows/shared/report-failure.ts
 
       - name: Remove in-progress label

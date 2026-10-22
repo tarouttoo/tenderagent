@@ -75,6 +75,10 @@ for (const label of ops.remove) {
   gh(["issue", "edit", issueNumber, "--remove-label", label]);
 }
 for (const label of ops.add) {
+  // gh silently no-ops --add-label for a label the repo does not have; make
+  // sure the lifecycle label exists first (a no-op here would leave the issue
+  // unlabeled, failing the "ends as agent:blocked" guarantee).
+  gh(["label", "create", label]);
   if (gh(["issue", "edit", issueNumber, "--add-label", label])) {
     console.log(`Relabeled issue #${issueNumber} with "${label}".`);
   }

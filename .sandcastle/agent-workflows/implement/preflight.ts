@@ -55,19 +55,14 @@ const PRD_HEADING = /^#{1,6}\s*(?:user stories|problem statement)\s*$/im;
  * issue as an undecomposed product spec even without PRD headings.
  */
 const USER_STORY =
-  /\bas an?\b[^.!\n]{0,160}?\bi\s+(?:want|need|would like|'d like)\b/gi;
+  /\bas an?\b[^.!\n]{0,160}?\bi\s*(?:want|need|would like|'d like)\b/gi;
 
 const countMatches = (pattern: RegExp, text: string): number => {
   return [...text.matchAll(pattern)].length;
 };
 
-export const isSubIssue = ({
-  subIssueCount,
-  body,
-}: {
-  subIssueCount: number;
-  body: string;
-}): boolean => subIssueCount > 0 || PART_OF_MARKER.test(body);
+export const isSubIssue = (subIssueCount: number, body: string): boolean =>
+  subIssueCount > 0 || PART_OF_MARKER.test(body);
 
 export const isPrdShaped = (body: string): boolean => {
   return PRD_HEADING.test(body) || countMatches(USER_STORY, body) >= 3;
@@ -100,7 +95,7 @@ export const runPreflight = (input: PreflightInput): PreflightVerdict => {
   const { issueNumber, body, subIssueCount, openPullRequests } = input;
   const reasons: string[] = [];
 
-  if (isSubIssue({ subIssueCount, body })) {
+  if (isSubIssue(subIssueCount, body)) {
     reasons.push(
       `Issue #${issueNumber} has sub-issues; only leaf issues are implemented. Implement the leaf tasks instead.`,
     );

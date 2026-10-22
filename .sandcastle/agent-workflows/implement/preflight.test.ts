@@ -43,23 +43,19 @@ const pr = (overrides: Partial<OpenPullRequest> = {}): OpenPullRequest => ({
 
 describe("isSubIssue", () => {
   it("refuses an issue with sub-issues", () => {
-    expect(isSubIssue({ subIssueCount: 2, body: leafBody })).toBe(true);
+    expect(isSubIssue(2, leafBody)).toBe(true);
   });
 
   it("refuses the legacy 'Part of #N' body marker", () => {
-    expect(isSubIssue({ subIssueCount: 0, body: "Part of #1\n\n" + leafBody })).toBe(
-      true,
-    );
+    expect(isSubIssue(0, "Part of #1\n\n" + leafBody)).toBe(true);
   });
 
   it("does not match 'part of #N' mid-sentence", () => {
-    expect(
-      isSubIssue({ subIssueCount: 0, body: "This file is part of #5 of the docs." }),
-    ).toBe(false);
+    expect(isSubIssue(0, "This file is part of #5 of the docs.")).toBe(false);
   });
 
   it("accepts a leaf issue", () => {
-    expect(isSubIssue({ subIssueCount: 0, body: leafBody })).toBe(false);
+    expect(isSubIssue(0, leafBody)).toBe(false);
   });
 });
 
@@ -78,6 +74,15 @@ describe("isPrdShaped", () => {
       "As a maintainer, I want fast triage.",
       "As a reviewer, I need structured feedback.",
       "As an agent, I would like full task context.",
+    ].join("\n");
+    expect(isPrdShaped(stories)).toBe(true);
+  });
+
+  it("counts 'I'd like' user stories despite the apostrophe", () => {
+    const stories = [
+      "As a maintainer, I'd like automatic runs.",
+      "As a reviewer, I'd like structured feedback.",
+      "As an agent, I'd like full task context.",
     ].join("\n");
     expect(isPrdShaped(stories)).toBe(true);
   });
