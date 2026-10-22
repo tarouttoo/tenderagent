@@ -10,6 +10,8 @@
 
 export const AGENT_LABEL_PREFIX = "agent:";
 export const TRIGGER_LABEL = "agent:implement";
+/** The review workflow's trigger label (PRs). */
+export const REVIEW_TRIGGER_LABEL = "agent:review";
 export const IN_PROGRESS_LABEL = "agent:in-progress";
 export const BLOCKED_LABEL = "agent:blocked";
 
@@ -31,28 +33,44 @@ export const assertOnlyAgentLabels = (labels: string[]): string[] => {
 
 /**
  * The label transition for a failed run: consume the trigger label (so a
- * blocked issue never re-triggers on its own) and the in-progress label, then
- * apply the blocked label. Retrying means re-adding the trigger label.
+ * blocked issue or PR never re-triggers on its own) and the in-progress
+ * label, then apply the blocked label. Retrying means re-adding the trigger
+ * label. The trigger is parameterized because the review workflow fires on a
+ * different trigger label (`agent:review`) than the implement workflow
+ * (`agent:implement`); everything else about the transition is shared.
  */
-export const blockedLabelOps = (): { remove: string[]; add: string[] } => ({
-  remove: assertOnlyAgentLabels([TRIGGER_LABEL, IN_PROGRESS_LABEL]),
+export const blockedLabelOps = (
+  triggerLabel: string = TRIGGER_LABEL,
+): { remove: string[]; add: string[] } => ({
+  remove: assertOnlyAgentLabels([triggerLabel, IN_PROGRESS_LABEL]),
   add: assertOnlyAgentLabels([BLOCKED_LABEL]),
 });
 
+/** What a blocked comment is posted on: an issue or a PR. */
+export type BlockedSubject = { kind: "issue" | "pr"; number: number };
+
+const subjectNoun = (subject: BlockedSubject): string =>
+  subject.kind === "pr" ? "PR" : "issue";
+
 /**
- * The blocked-issue comment: header naming the issue, the reason(s) as
- * bullets, the workflow-run link, and the retry convention. Multi-line
- * reasons (the preflight collects several at once) become one bullet per line.
+ * The blocked comment for any agent workflow: header naming the subject, the
+ * reason(s) as bullets, the workflow-run link, and the retry convention.
+ * Multi-line reasons (the preflight collects several at once) become one
+ * bullet per line. The retry label must be an agent:* lifecycle label.
  */
-export const formatFailureComment = ({
-  issueNumber,
+export const formatBlockedComment = ({
+  subject,
   reason,
   runUrl,
+  retryLabel,
 }: {
-  issueNumber: number;
+  subject: BlockedSubject;
   reason: string;
   runUrl: string;
+  retryLabel: string;
 }): string => {
+  assertOnlyAgentLabels([retryLabel]);
+
   const bullets = reason
     .split("\n")
     .map((line) => line.trim())
@@ -65,12 +83,32 @@ export const formatFailureComment = ({
       : "The workflow run link is unavailable; check the Actions tab.";
 
   return [
-    `🚫 **Agent run blocked on issue #${issueNumber}**`,
+    `🚫 **Agent run blocked on ${subjectNoun(subject)} #${subject.number}**`,
     "",
     ...bullets,
     "",
     runLine,
     "",
-    "_Retry by re-adding the `agent:implement` label._",
+    `_Retry by re-adding the \`${retryLabel}\` label._`,
   ].join("\n");
 };
+
+/**
+ * The implement workflow's blocked-issue comment: the issue-shaped case of
+ * `formatBlockedComment`, retrying via the implement trigger label.
+ */
+export const formatFailureComment = ({
+  issueNumber,
+  reason,
+  runUrl,
+}: {
+  issueNumber: number;
+  reason: string;
+  runUrl: string;
+}): string =>
+  formatBlockedComment({
+    subject: { kind: "issue", number: issueNumber },
+    reason,
+    runUrl,
+    retryLabel: TRIGGER_LABEL,
+  });
