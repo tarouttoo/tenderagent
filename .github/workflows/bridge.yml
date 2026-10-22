@@ -27,6 +27,10 @@ jobs:
       group: bridge-issue-${{ github.event.issue.number }}
       cancel-in-progress: true
     permissions:
+      # contents: read for the checkout (unlisted scopes are none under a
+      # restricted permissions block); the only write this job performs is on
+      # issues — and only agent:* lifecycle labels, via the bridge script.
+      contents: read
       issues: write
 
     env:
@@ -49,5 +53,5 @@ jobs:
       # Dependency-free on purpose (node builtins + pure modules only), like
       # the failure reporter: npx tsx runs it without npm ci, so the bridge
       # stays a fast single-purpose job.
-      - name: Bridge triage label to agent trigger
+      - name: Bridge the triage label to agent:implement
         run: npx -y tsx@^4 .sandcastle/agent-workflows/bridge/bridge.ts

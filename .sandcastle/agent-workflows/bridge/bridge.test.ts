@@ -16,7 +16,7 @@ describe("bridgeDecision", () => {
     });
   });
 
-  it("ignores label events that are not the bridge trigger", () => {
+  it("ignores label events that are not the triage label", () => {
     for (const eventLabel of ["agent:implement", "needs-triage", "bug"]) {
       expect(bridgeDecision({ ...input, eventLabel })).toMatchObject({
         act: false,
@@ -36,7 +36,7 @@ describe("bridgeDecision", () => {
     });
   });
 
-  it("skips while the pipeline is engaged — trigger pending or run live", () => {
+  it("skips while the pipeline is engaged — implement label pending or run live", () => {
     for (const engaged of [["agent:implement"], ["agent:in-progress"]]) {
       expect(
         bridgeDecision({
@@ -73,7 +73,7 @@ describe("bridgeDecision", () => {
     }
   });
 
-  it("writes exactly the implement trigger label", () => {
+  it("writes exactly the agent:implement label", () => {
     const verdict = bridgeDecision(input);
     expect(verdict.act && verdict.add).toEqual(["agent:implement"]);
   });

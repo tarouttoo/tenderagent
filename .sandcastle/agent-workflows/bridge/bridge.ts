@@ -19,14 +19,14 @@ import {
 } from "../shared/failure";
 
 /** The human triage label that fires the bridge. */
-export const BRIDGE_TRIGGER = "ready-for-agent";
+export const BRIDGE_TRIAGE_LABEL = "ready-for-agent";
 
 /**
  * Lifecycle labels meaning the pipeline is already engaged for this issue:
- * a trigger label is pending or a run is live. Bridging over them would
+ * the implement label is pending or a run is live. Bridging over them would
  * queue duplicate implement runs.
  */
-export const ENGAGED_LABELS = [TRIGGER_LABEL, IN_PROGRESS_LABEL];
+const ENGAGED_LABELS = [TRIGGER_LABEL, IN_PROGRESS_LABEL];
 
 export type BridgeInput = {
   /** Name of the label event that fired (`github.event.label.name`). */
@@ -49,17 +49,17 @@ export type BridgeVerdict =
 export const bridgeDecision = (input: BridgeInput): BridgeVerdict => {
   const { eventLabel, issueState, issueLabels } = input;
 
-  if (eventLabel !== BRIDGE_TRIGGER) {
+  if (eventLabel !== BRIDGE_TRIAGE_LABEL) {
     return {
       act: false,
-      reason: `Event label "${eventLabel}" is not "${BRIDGE_TRIGGER}"; nothing to bridge.`,
+      reason: `Event label "${eventLabel}" is not "${BRIDGE_TRIAGE_LABEL}"; nothing to bridge.`,
     };
   }
 
-  if (!issueLabels.includes(BRIDGE_TRIGGER)) {
+  if (!issueLabels.includes(BRIDGE_TRIAGE_LABEL)) {
     return {
       act: false,
-      reason: `The "${BRIDGE_TRIGGER}" label is no longer on the issue; the triage decision was reverted.`,
+      reason: `The "${BRIDGE_TRIAGE_LABEL}" label is no longer on the issue; the triage decision was reverted.`,
     };
   }
 
@@ -156,7 +156,7 @@ if (invokedDirectly) {
     ghBestEffort(["label", "create", TRIGGER_LABEL]);
     gh(["issue", "edit", issueNumber, "--add-label", TRIGGER_LABEL]);
     console.log(
-      `Bridged issue #${issueNumber}: "${BRIDGE_TRIGGER}" → "${TRIGGER_LABEL}"; the implement workflow takes it from here.`,
+      `Bridged issue #${issueNumber}: "${BRIDGE_TRIAGE_LABEL}" → "${TRIGGER_LABEL}"; the implement workflow takes it from here.`,
     );
   } catch (error) {
     console.error(
