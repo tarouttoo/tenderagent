@@ -66,14 +66,19 @@ jobs:
         run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 
       - name: Run review agent and extract payload
+        id: review
         env:
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
         run: npx tsx .sandcastle/agent-workflows/review/review.ts
 
+      # Skipped when the PR is closed/merged (the review step signals that via
+      # its skipped output); a closed PR gets no review and no ready flip.
       - name: Post review findings
+        if: steps.review.outputs.skipped != 'true'
         run: npx tsx .sandcastle/agent-workflows/review/post-review.ts
 
       - name: Mark PR ready
+        if: steps.review.outputs.skipped != 'true'
         run: gh pr ready "$PR_NUMBER"
 
       # Failure handling: post the reason comment (with the run link) and

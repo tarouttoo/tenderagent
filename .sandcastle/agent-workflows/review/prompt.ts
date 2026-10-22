@@ -7,9 +7,6 @@
  * `shared/prompt.ts` and is shared with the implement workflow; this module
  * owns the review-specific argument map.
  */
-import { renderPrompt } from "../shared/prompt";
-
-export { renderPrompt } from "../shared/prompt";
 
 export interface ReviewPromptArgsInput {
   prNumber: number;

@@ -1,18 +1,23 @@
 /**
- * CLI failure handler for the implement workflow. On any failure, reports the
- * reason on the issue and relabels it `agent:blocked` (trigger label removed;
- * retrying means re-adding `agent:implement`).
+ * CLI failure handler shared by the agent workflows: on any failure, post a
+ * legible reason comment (with the workflow-run link) on the subject and
+ * relabel it `agent:blocked` (trigger label removed; retrying means re-adding
+ * the trigger). Parameterized by subject kind, number env var, trigger label,
+ * and workflow name — see `reportFailure`.
  *
  * Deliberately dependency-free — it imports only node builtins and the pure
- * formatting module below — so it runs via `npx tsx` even when `npm ci` or the
- * agent setup itself is what failed.
+ * modules below — so it runs via `npx tsx` even when `npm ci` or the agent
+ * setup itself is what failed.
  */
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   blockedLabelOps,
-  formatFailureComment,
+  formatBlockedComment,
+  TRIGGER_LABEL,
+  type BlockedSubject,
 } from "./failure";
 
 const env = (name: string): string => process.env[name] ?? "";
@@ -24,7 +29,7 @@ const outputDir = (): string => {
 };
 
 /** The reason recorded by `fail()` in shared/common.ts, when there was one. */
-const recordedReason = (): string => {
+const recordedReason = (workflowName: string): string => {
   try {
     const recorded = fs
       .readFileSync(path.join(outputDir(), "failure_reason.txt"), "utf8")
@@ -33,7 +38,7 @@ const recordedReason = (): string => {
   } catch {
     // fall through to the generic reason
   }
-  return "The implement workflow failed without a recorded reason; check the workflow run logs for details.";
+  return `The ${workflowName} failed without a recorded reason; check the workflow run logs for details.`;
 };
 
 /** Best-effort gh call: logs failures, never throws (the run already failed). */
@@ -49,37 +54,90 @@ const gh = (args: string[]): boolean => {
   }
 };
 
-const issueNumber = env("ISSUE_NUMBER");
-const runUrl = env("RUN_URL");
-const reason = recordedReason();
-
-console.log(`Failure reason:\n${reason}\n`);
-
-const commentPath = path.join(outputDir(), "blocked_comment.md");
-fs.writeFileSync(
-  commentPath,
-  formatFailureComment({ issueNumber: Number(issueNumber) || 0, reason, runUrl }),
-);
-
-if (issueNumber.length === 0) {
-  console.error("ISSUE_NUMBER is not set; cannot report the failure on the issue.");
-  process.exit(0);
+export interface FailureReportConfig {
+  /** Surface the failure is posted on. */
+  subjectKind: "issue" | "pr";
+  /** Env var holding the subject's number (`ISSUE_NUMBER` / `PR_NUMBER`). */
+  numberEnv: string;
+  /** The trigger label a retry re-adds (must be an agent:* lifecycle label). */
+  retryLabel: string;
+  /** Workflow name in the generic fallback reason when none was recorded. */
+  workflowName: string;
 }
 
-if (gh(["issue", "comment", issueNumber, "--body-file", commentPath])) {
-  console.log(`Posted the failure comment on issue #${issueNumber}.`);
-}
+/**
+ * Report a failed run: comment on the subject with the reason and run link,
+ * then relabel it blocked. Best-effort throughout — the run has already
+ * failed, so reporting never makes things worse; it only makes them legible.
+ */
+export const reportFailure = (config: FailureReportConfig): void => {
+  const runUrl = env("RUN_URL");
+  const reason = recordedReason(config.workflowName);
+  const subjectNumber = env(config.numberEnv);
 
-const ops = blockedLabelOps();
-for (const label of ops.remove) {
-  gh(["issue", "edit", issueNumber, "--remove-label", label]);
-}
-for (const label of ops.add) {
-  // gh silently no-ops --add-label for a label the repo does not have; make
-  // sure the lifecycle label exists first (a no-op here would leave the issue
-  // unlabeled, failing the "ends as agent:blocked" guarantee).
-  gh(["label", "create", label]);
-  if (gh(["issue", "edit", issueNumber, "--add-label", label])) {
-    console.log(`Relabeled issue #${issueNumber} with "${label}".`);
+  console.log(`Failure reason:\n${reason}\n`);
+
+  if (subjectNumber.length === 0) {
+    console.error(
+      `${config.numberEnv} is not set; cannot report the failure on the ${config.subjectKind}.`,
+    );
+    return;
   }
+
+  const subject: BlockedSubject = {
+    kind: config.subjectKind,
+    number: Number(subjectNumber) || 0,
+  };
+  const surface = config.subjectKind === "pr" ? "pr" : "issue";
+
+  const commentPath = path.join(outputDir(), "blocked_comment.md");
+  fs.writeFileSync(
+    commentPath,
+    formatBlockedComment({
+      subject,
+      reason,
+      runUrl,
+      retryLabel: config.retryLabel,
+    }),
+  );
+
+  if (gh([surface, "comment", subjectNumber, "--body-file", commentPath])) {
+    console.log(
+      `Posted the failure comment on ${config.subjectKind} #${subjectNumber}.`,
+    );
+  }
+
+  const ops = blockedLabelOps(config.retryLabel);
+  for (const label of ops.remove) {
+    gh([surface, "edit", subjectNumber, "--remove-label", label]);
+  }
+  for (const label of ops.add) {
+    // gh silently no-ops --add-label for a label the repo does not have; make
+    // sure the lifecycle label exists first (a no-op here would leave the
+    // subject unlabeled, failing the "ends as agent:blocked" guarantee).
+    gh(["label", "create", label]);
+    if (gh([surface, "edit", subjectNumber, "--add-label", label])) {
+      console.log(
+        `Relabeled ${config.subjectKind} #${subjectNumber} with "${label}".`,
+      );
+    }
+  }
+};
+
+/**
+ * Direct invocation is the implement workflow's failure handler: the
+ * issue-flavored case (see agent-implement.yml). The review workflow wraps
+ * `reportFailure` from its own entry instead.
+ */
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (invokedDirectly) {
+  reportFailure({
+    subjectKind: "issue",
+    numberEnv: "ISSUE_NUMBER",
+    retryLabel: TRIGGER_LABEL,
+    workflowName: "implement workflow",
+  });
 }

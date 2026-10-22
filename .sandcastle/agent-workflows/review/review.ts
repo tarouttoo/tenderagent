@@ -46,6 +46,12 @@ try {
     safeSh(
       `gh pr edit ${prNumber} --remove-label ${JSON.stringify(REVIEW_TRIGGER_LABEL)}`,
     );
+    // Tell the workflow to skip the post/ready steps — process.exit(0) only
+    // ends this step, and the posting step must not run without a payload.
+    const githubOutput = process.env.GITHUB_OUTPUT;
+    if (githubOutput !== undefined && githubOutput.length > 0) {
+      fs.appendFileSync(githubOutput, "skipped=true\n");
+    }
     console.log(
       `PR #${prNumber} is ${pr.state}; skipping the review (only open PRs are reviewed).`,
     );
