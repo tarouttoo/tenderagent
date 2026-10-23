@@ -105,7 +105,16 @@ jobs:
         if: steps.review.outputs.skipped != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh pr ready "$PR_NUMBER"
+        run: |
+          # Pipeline PRs are born draft, but finished interactive work ships
+          # ready for review (docs/agents/issue-tracker.md). The ready mutation
+          # refuses a non-draft PR, and a failed step here lands the PR in the
+          # blocked path — flip drafts only, skip the rest.
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .draft)" = "true" ]; then
+            gh pr ready "$PR_NUMBER"
+          else
+            echo "PR is not a draft; ready-flip skipped (review already posted above)"
+          fi
 
       # Failure handling: post the reason comment (with the run link) and
       # relabel the PR agent:blocked, removing the trigger label. Runs on
