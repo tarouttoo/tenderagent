@@ -89,7 +89,7 @@ export const reportFailure = (config: FailureReportConfig): void => {
     kind: config.subjectKind,
     number: Number(subjectNumber) || 0,
   };
-  const surface = config.subjectKind === "pr" ? "pr" : "issue";
+  const surface = config.subjectKind;
 
   const commentPath = path.join(outputDir(), "blocked_comment.md");
   fs.writeFileSync(
