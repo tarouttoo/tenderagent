@@ -34,6 +34,13 @@ jobs:
       # and quality by editing env vars only).
       AGENT_PROVIDER: zai
       AGENT_MODEL: glm-5.3-flash
+      # PAT-backed on purpose, but only for the steps where the PAT is
+      # load-bearing: the draft-PR creation must fire pull_request events (a
+      # GITHUB_TOKEN cannot trigger other workflows), and the agent's gh calls
+      # are read-only evidence gathering. Lifecycle label mutations override
+      # this at the step level — they run as the workflow's own token via
+      # WORKFLOW_GH_TOKEN and the shared guarded path (shared/labels.ts),
+      # never as the PAT (issue #17).
       GH_TOKEN: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
 
@@ -61,11 +68,12 @@ jobs:
 
       # The trigger label is consumed by the run: retries re-add it (parent
       # issue decision), so a finished or blocked issue carries only the
-      # lifecycle label.
+      # lifecycle label. The mutation goes through the shared guarded path
+      # (assertOnlyAgentLabels) as the workflow token, never the PAT.
       - name: Transition to in-progress
-        run: |
-          gh issue edit "$ISSUE_NUMBER" --remove-label "agent:implement" || true
-          gh issue edit "$ISSUE_NUMBER" --add-label "agent:in-progress"
+        env:
+          WORKFLOW_GH_TOKEN: ${{ github.token }}
+        run: npx -y tsx@^4 .sandcastle/agent-workflows/shared/label-transition.ts --surface issue --number "$ISSUE_NUMBER" --transition start --trigger "agent:implement"
 
       - name: Configure agent identity
         run: |
@@ -100,6 +108,11 @@ jobs:
           BRANCH: ${{ steps.branch.outputs.name }}
         run: git push --force origin "$BRANCH"
 
+      # The PAT is load-bearing here and only here (besides the agent's gh
+      # reads): a draft PR opened by the GITHUB_TOKEN fires no pull_request
+      # events, so CI and the review workflow would never run. Creating a PR
+      # is not a label mutation — the token boundary of issue #17 covers
+      # label transitions only.
       - name: Open draft PR
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
@@ -131,8 +144,14 @@ jobs:
         if: ${{ !success() }}
         env:
           OUTPUT_DIR: ${{ runner.temp }}
+          # The blocked comment and relabel run under the workflow token: the
+          # job's permissions block guarantees the writes; the PAT does not.
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_GH_TOKEN: ${{ github.token }}
         run: npx -y tsx@^4 .sandcastle/agent-workflows/shared/report-failure.ts
 
       - name: Remove in-progress label
         if: always()
-        run: gh issue edit "$ISSUE_NUMBER" --remove-label "agent:in-progress" || true
+        env:
+          WORKFLOW_GH_TOKEN: ${{ github.token }}
+        run: npx -y tsx@^4 .sandcastle/agent-workflows/shared/label-transition.ts --surface issue --number "$ISSUE_NUMBER" --transition finish

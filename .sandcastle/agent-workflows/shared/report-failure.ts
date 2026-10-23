@@ -6,8 +6,8 @@
  * and workflow name — see `reportFailure`.
  *
  * Deliberately dependency-free — it imports only node builtins and the pure
- * modules below — so it runs via `npx tsx` even when `npm ci` or the agent
- * setup itself is what failed.
+ * shared modules (`failure.ts`, `labels.ts`) — so it runs via `npx tsx` even
+ * when `npm ci` or the agent setup itself is what failed.
  */
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -19,6 +19,7 @@ import {
   TRIGGER_LABEL,
   type BlockedSubject,
 } from "./failure";
+import { applyLabelOps } from "./labels";
 
 const env = (name: string): string => process.env[name] ?? "";
 
@@ -107,21 +108,20 @@ export const reportFailure = (config: FailureReportConfig): void => {
     );
   }
 
-  const ops = blockedLabelOps(config.retryLabel);
-  for (const label of ops.remove) {
-    gh([surface, "edit", subjectNumber, "--remove-label", label]);
-  }
-  for (const label of ops.add) {
-    // gh silently no-ops --add-label for a label the repo does not have; make
-    // sure the lifecycle label exists first (a no-op here would leave the
-    // subject unlabeled, failing the "ends as agent:blocked" guarantee).
-    gh(["label", "create", label]);
-    if (gh([surface, "edit", subjectNumber, "--add-label", label])) {
-      console.log(
-        `Relabeled ${config.subjectKind} #${subjectNumber} with "${label}".`,
-      );
-    }
-  }
+  // The relabel is a label mutation: it goes through the shared guarded path
+  // and runs under the workflow token (WORKFLOW_GH_TOKEN), never the PAT —
+  // best-effort, since the run has already failed and reporting must only
+  // make things legible.
+  applyLabelOps({
+    surface,
+    subjectNumber,
+    ops: blockedLabelOps(config.retryLabel),
+    ensureLabels: true,
+    bestEffort: true,
+  });
+  console.log(
+    `Relabeled ${config.subjectKind} #${subjectNumber}: trigger and in-progress consumed, "agent:blocked" applied.`,
+  );
 };
 
 /**
