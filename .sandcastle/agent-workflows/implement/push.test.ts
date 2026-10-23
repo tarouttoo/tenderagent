@@ -78,6 +78,25 @@ describe("classifyPushFailure", () => {
     expect(message).toMatch(/agent:implement/);
   });
 
+  it("recognizes the first-push collision wording", () => {
+    const output =
+      "To /tmp/origin.git\n" +
+      " ! [remote rejected] agent/issue-18 -> agent/issue-18 (reference already exists)\n" +
+      "error: failed to push some refs to '/tmp/origin.git'\n";
+    const message = classifyPushFailure(output, "agent/issue-18");
+    expect(message).toMatch(/--force-with-lease/);
+  });
+
+  it("does not mistake an unrelated server refusal for a lease conflict", () => {
+    const output =
+      "To https://github.com/tarouttoo/tenderagent.git\n" +
+      " ! [remote rejected] agent/issue-18 -> agent/issue-18 (protected branch hook declined)\n" +
+      "error: failed to push some refs to 'https://github.com/tarouttoo/tenderagent.git'\n";
+    const message = classifyPushFailure(output, "agent/issue-18");
+    expect(message).not.toMatch(/--force-with-lease/);
+    expect(message).toContain("protected branch hook declined");
+  });
+
   it("explains a token refused workflow-file writes", () => {
     const output =
       " ! [remote rejected] agent/issue-18 -> agent/issue-18 (refusing to allow a GitHub App to create or update workflow `.github/workflows/agent-implement.yml` without `workflows` permission)\n";

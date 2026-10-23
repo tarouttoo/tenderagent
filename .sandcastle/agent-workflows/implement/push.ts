@@ -12,6 +12,7 @@ import { execFileSync } from "node:child_process";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fail, required } from "../shared/common";
+import { TRIGGER_LABEL } from "../shared/failure";
 
 /** The fully-qualified ref the workflow pushes to for the agent branch. */
 export const remoteRef = (branch: string): string => `refs/heads/${branch}`;
@@ -63,11 +64,13 @@ const outputTail = (output: string, maxChars = 400): string => {
  * actually said. Two shapes get an actionable reason instead of a raw output
  * dump: a lost lease race (the branch moved underneath this run — the #18
  * guard doing its job; the rejection surfaces as "stale info" over smart
- * HTTP, "incorrect old value provided" over the local transport, and as a
- * plain non-fast-forward in some client-side orders) and a token refused
- * workflow-file writes (the default GITHUB_TOKEN can never push those;
- * AGENT_PAT must carry the Workflows permission). Anything else keeps the
- * output excerpt.
+ * HTTP, "incorrect old value provided" / "reference already exists" over the
+ * local transport, and as a plain non-fast-forward in some client-side
+ * orders) and a token refused workflow-file writes (the default
+ * GITHUB_TOKEN can never push those; AGENT_PAT must carry the Workflows
+ * permission). Anything else keeps the output excerpt — other server-side
+ * refusals (branch protection, removed permissions) must not masquerade as
+ * lease conflicts.
  */
 export const classifyPushFailure = (output: string, branch: string): string => {
   if (output.includes("create or update workflow")) {
@@ -80,13 +83,15 @@ export const classifyPushFailure = (output: string, branch: string): string => {
   }
   if (
     output.includes("(stale info)") ||
-    output.includes("rejected]") // covers "[rejected]" and "[remote rejected]"
+    output.includes("incorrect old value provided") ||
+    output.includes("(non-fast-forward)") ||
+    output.includes("(reference already exists)")
   ) {
     return (
       `Push of ${branch} was refused by --force-with-lease: origin/${branch} has commits this run never saw ` +
       "(a concurrent or earlier run pushed newer work). Inspect origin/" +
       `${branch}; if that newer work is disposable, delete the branch ` +
-      `(git push origin --delete ${branch}) and re-add the agent:implement label; ` +
+      `(git push origin --delete ${branch}) and re-add the ${TRIGGER_LABEL} label; ` +
       "otherwise salvage it manually."
     );
   }
@@ -131,10 +136,8 @@ const gitRun = (args: string[]): GitOutput => {
  * the short window between ls-remote and the transfer — anything arriving in
  * it rejects the push loudly. Returns how the push was guarded.
  */
-export const pushBranch = (
-  branch: string,
-  remote = "origin",
-): PushOutcome => {
+export const pushBranch = (branch: string): PushOutcome => {
+  const remote = "origin";
   const ref = remoteRef(branch);
   const listed = gitRun(["ls-remote", remote, ref]);
   if (!listed.ok) {
@@ -173,5 +176,5 @@ const invokedDirectly =
   fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 if (invokedDirectly) {
-  pushBranch(required("BRANCH"), process.env.REMOTE ?? "origin");
+  pushBranch(required("BRANCH"));
 }

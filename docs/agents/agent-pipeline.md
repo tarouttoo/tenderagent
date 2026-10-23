@@ -80,7 +80,7 @@ A `ZAI_API_KEY` the provider rejects behaves like credit exhaustion from the tra
 
 The agent step finishes green, then the *Push branch* step exits non-zero and the blocked comment names the lease conflict. The push pins the remote state it observed (`--force-with-lease`, issue #18), so this means the branch moved underneath the run — a concurrent or earlier run landed newer commits on `agent/issue-<n>-…` between this run's start and its push. The refused push left the newer work intact.
 
-- **Detection**: blocked comment / *Push branch* log shows `! [rejected] … (stale info)`, `(incorrect old value provided)`, or the recorded reason naming `--force-with-lease`.
+- **Detection**: blocked comment / *Push branch* log shows `! [rejected] … (stale info)`, `(incorrect old value provided)`, `(reference already exists)`, or the recorded reason naming `--force-with-lease`.
 - **Recovery**: inspect `origin/agent/issue-<n>-…`. If the newer work is disposable (a stale attempt superseded by this retry — the usual case, since runs are serialized per issue and the loser outlived its slot), delete the branch (`git push origin --delete <branch>`) and re-add the trigger label — the next push then starts under an empty expectation again. If the newer work is valuable, salvage it manually instead of deleting.
 
 ### Loud failure: push refused on workflow-file changes
