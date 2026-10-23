@@ -26,6 +26,13 @@ When set to `yes`, PRs run through the same labels and states as issues, using t
 
 GitHub shares one number space across issues and PRs, so a bare `#42` may be either: resolve with `gh pr view 42` and fall back to `gh issue view 42`.
 
+## Pull request bodies
+
+Any change destined for `main` ships as a PR, and every PR body follows the `pr` skill template — **Summary** (the smallest view that makes the change clear), **Evidence** (concrete before/after: a failing-then-passing run for code, quoted excerpts for docs), **Merge Danger** (one-way or two-way door, one-word blast radius). The skill carries the full template and worked examples; this section adds only repo rules.
+
+- **Closing keyword first**: issue-bound work opens the body with `Closes #<n>` — merging closes the issue, and the implement preflight matches closing keywords in PR titles and bodies.
+- **Ready when done**: a finished change ships as a ready-for-review PR; open a draft only while work continues. Pipeline PRs are born draft and flip to ready after `agent:review`; the flip touches drafts only, so an already-ready PR skips the flip instead of failing the run into `agent:blocked`.
+
 ## When a skill says "publish to the issue tracker"
 
 Create a GitHub issue.

@@ -4,6 +4,10 @@
 
 Issues are tracked in GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
+### Pull requests
+
+Any change destined for `main` ships as a PR with a body per the `pr` skill. Issue-bound work leads the body with the closing keyword; a finished change ships ready for review — draft only while work continues. See `docs/agents/issue-tracker.md` ("Pull request bodies").
+
 ### Triage labels
 
 Default five-role triage vocabulary (label strings equal role names). See `docs/agents/triage-labels.md`.
