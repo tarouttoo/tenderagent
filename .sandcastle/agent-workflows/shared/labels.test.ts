@@ -189,6 +189,24 @@ describe("applyLabelOps", () => {
     ).not.toThrow();
     expect(calls).toHaveLength(1);
   });
+
+  it("reports how many gh calls applied and failed", () => {
+    // Callers (the failure reporter) must be able to tell whether the
+    // relabel landed instead of claiming success unconditionally.
+    const calls: GhCall[] = [];
+    const flakyRun = (args: string[], env: NodeJS.ProcessEnv) => {
+      recordingRun(calls)(args, env);
+      if (args.includes("--remove-label")) throw new Error("gh went sideways");
+    };
+    const result = applyLabelOps({
+      surface: "issue",
+      subjectNumber: "17",
+      ops: { remove: ["agent:implement"], add: ["agent:in-progress"] },
+      env: workflowEnv,
+      run: flakyRun,
+    });
+    expect(result).toEqual({ applied: 1, failed: 1 });
+  });
 });
 
 describe("labelTransition", () => {
@@ -199,11 +217,15 @@ describe("labelTransition", () => {
     });
   });
 
-  it("finish removes in-progress and adds nothing", () => {
-    expect(labelTransition("agent:review", "finish")).toEqual({
+  it("finish removes in-progress and adds nothing, needing no trigger", () => {
+    expect(labelTransition(undefined, "finish")).toEqual({
       remove: ["agent:in-progress"],
       add: [],
     });
+  });
+
+  it("refuses a start transition without a trigger label", () => {
+    expect(() => labelTransition(undefined, "start")).toThrow(/trigger/);
   });
 
   it("only ever writes agent:* labels for every trigger and phase", () => {

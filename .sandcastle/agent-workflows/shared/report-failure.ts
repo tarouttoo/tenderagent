@@ -111,17 +111,24 @@ export const reportFailure = (config: FailureReportConfig): void => {
   // The relabel is a label mutation: it goes through the shared guarded path
   // and runs under the workflow token (WORKFLOW_GH_TOKEN), never the PAT —
   // best-effort, since the run has already failed and reporting must only
-  // make things legible.
-  applyLabelOps({
+  // make things legible. The result decides the log line: never claim
+  // "agent:blocked" landed when a gh call failed.
+  const { applied, failed } = applyLabelOps({
     surface,
     subjectNumber,
     ops: blockedLabelOps(config.retryLabel),
     ensureLabels: true,
     bestEffort: true,
   });
-  console.log(
-    `Relabeled ${config.subjectKind} #${subjectNumber}: trigger and in-progress consumed, "agent:blocked" applied.`,
-  );
+  if (failed === 0) {
+    console.log(
+      `Relabeled ${config.subjectKind} #${subjectNumber}: trigger and in-progress consumed, "agent:blocked" applied (${applied} gh calls).`,
+    );
+  } else {
+    console.error(
+      `Relabel incomplete on ${config.subjectKind} #${subjectNumber}: ${failed} of ${applied + failed} gh calls failed (see above); the subject may not carry "agent:blocked".`,
+    );
+  }
 };
 
 /**

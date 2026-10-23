@@ -71,10 +71,7 @@ if (invokedDirectly) {
     applyLabelOps({
       surface: args.surface,
       subjectNumber: args.subjectNumber,
-      ops: labelTransition(
-        args.triggerLabel ?? "",
-        args.phase,
-      ),
+      ops: labelTransition(args.triggerLabel, args.phase),
     });
     console.log(
       `Transition "${args.phase}" applied on ${args.surface} #${args.subjectNumber}.`,

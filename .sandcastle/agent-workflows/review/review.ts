@@ -45,8 +45,9 @@ try {
   // sit in the pipeline forever, and no blocked noise is posted). The
   // consumption is a label mutation: it goes through the shared guarded path
   // under the workflow token (WORKFLOW_GH_TOKEN), never the PAT — and unlike
-  // the old silent safeSh call, a failure here fails the run, landing in the
-  // blocked path instead of stranding the trigger label (issue #17).
+  // the old silent safeSh call, gh failures are logged instead of swallowed.
+  // A missing workflow token still throws before any gh call, failing the
+  // run into the blocked path (issue #17).
   if (pr.state !== "OPEN") {
     applyLabelOps({
       surface: "pr",

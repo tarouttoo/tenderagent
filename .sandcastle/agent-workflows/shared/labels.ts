@@ -63,18 +63,25 @@ export type TransitionPhase = "start" | "finish";
 /**
  * The run transitions shared by both agent workflows, parameterized by the
  * workflow's trigger label: `start` consumes the trigger and applies
- * in-progress; `finish` takes in-progress off (success — the failure path is
- * `blockedLabelOps` in failure.ts). The table lives here so the lifecycle
- * label strings are declared once, guarded, and reused by the workflow CLI —
- * never re-typed inline in YAML where the guard cannot run.
+ * in-progress; `finish` takes in-progress off and needs no trigger (success —
+ * the failure path is `blockedLabelOps` in failure.ts). The table lives here
+ * so the lifecycle label strings are declared once, guarded, and reused by
+ * the workflow CLI — never re-typed inline in YAML where the guard cannot run.
  */
 export const labelTransition = (
-  triggerLabel: string,
+  triggerLabel: string | undefined,
   phase: TransitionPhase,
-): LabelOps =>
-  phase === "start"
-    ? labelOps([triggerLabel], [IN_PROGRESS_LABEL])
-    : labelOps([IN_PROGRESS_LABEL], []);
+): LabelOps => {
+  if (phase === "finish") {
+    return labelOps([IN_PROGRESS_LABEL], []);
+  }
+  if (!triggerLabel || triggerLabel.length === 0) {
+    throw new Error(
+      "The start transition requires the workflow's trigger label (the one it consumes).",
+    );
+  }
+  return labelOps([triggerLabel], [IN_PROGRESS_LABEL]);
+};
 
 /** One observed gh invocation: the argv and the exact env it would run under. */
 export interface GhCall {
@@ -115,6 +122,13 @@ export interface ApplyLabelOpsInput {
   run?: GhRunner;
 }
 
+/** Outcome of a transition: gh calls that ran vs. ones that failed (all
+ * failures also land on stderr; strict mode throws instead of counting). */
+export interface LabelMutationResult {
+  applied: number;
+  failed: number;
+}
+
 /**
  * Execute a label transition as the workflow GITHUB_TOKEN: remove-then-add,
  * with the agent:* invariant asserted before any gh call runs — a refused
@@ -122,9 +136,10 @@ export interface ApplyLabelOpsInput {
  * failure: a consumed trigger or in-progress label may already be absent,
  * and that must not fail the transition. Adds fail the step (strict) unless
  * `bestEffort` is set by the failure reporter, where the run has already
- * failed and reporting must only make things legible.
+ * failed and reporting must only make things legible. Returns the call
+ * counts so callers never have to claim success blindly.
  */
-export const applyLabelOps = (input: ApplyLabelOpsInput): void => {
+export const applyLabelOps = (input: ApplyLabelOpsInput): LabelMutationResult => {
   const ops: LabelOps = {
     remove: assertOnlyAgentLabels(input.ops.remove),
     add: assertOnlyAgentLabels(input.ops.add),
@@ -134,12 +149,15 @@ export const applyLabelOps = (input: ApplyLabelOpsInput): void => {
     GH_TOKEN: mutationToken(input.env),
   };
   const run = input.run ?? ghMutate;
+  const result: LabelMutationResult = { applied: 0, failed: 0 };
 
   /** Log and continue: for failure reporting, and for tolerable failures. */
   const bestEffort = (args: string[]): void => {
     try {
       run(args, env);
+      result.applied += 1;
     } catch (error) {
+      result.failed += 1;
       console.error(
         `gh ${args.join(" ")} failed: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -161,6 +179,8 @@ export const applyLabelOps = (input: ApplyLabelOpsInput): void => {
       bestEffort([input.surface, "edit", input.subjectNumber, "--add-label", label]);
     } else {
       run([input.surface, "edit", input.subjectNumber, "--add-label", label]);
+      result.applied += 1;
     }
   }
+  return result;
 };
