@@ -103,20 +103,31 @@ jobs:
           OUTPUT_DIR: ${{ runner.temp }}
         run: npx tsx .sandcastle/agent-workflows/implement/implement.ts
 
-      # Push under the workflow GITHUB_TOKEN, not the PAT: the agent's commits
-      # may add or update workflow files, and a PAT without the `workflow`
-      # scope is refused exactly that push (the #17 run died here after a
-      # fully green agent run). The job's contents:write covers a
-      # GITHUB_TOKEN push; unsetting checkout's stored auth header is what
-      # makes the push actually use the token below.
+      # Push under the PAT when present, the workflow GITHUB_TOKEN otherwise.
+      # The GITHUB_TOKEN can never push commits that create or update
+      # .github/workflows/ files — no permissions block grants `workflows` to
+      # it, the refusal is server-side (#17's and #18's runs died exactly
+      # there) — so workflow-touching issues require AGENT_PAT to carry the
+      # fine-grained Workflows read/write permission (classic: the `workflow`
+      # scope). Unsetting checkout's stored auth header is what makes the
+      # push actually use the token below. The push itself is lease-guarded
+      # (implement/push.ts): it reads the remote state with ls-remote and
+      # pins it with --force-with-lease, so a retry cannot clobber commits a
+      # concurrent run pushed — it fails loudly, with a recorded reason —
+      # while a first push (no remote ref) pushes under the empty
+      # expectation: the ref must not exist.
       - name: Push branch
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
-          PUSH_TOKEN: ${{ github.token }}
+          PUSH_TOKEN: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+          # Where the push's fail() records failure_reason.txt for the
+          # failure handler below (a bare rejected push used to block the
+          # issue with no recorded reason — the #18 blocked comment).
+          OUTPUT_DIR: ${{ runner.temp }}
         run: |
           git config --unset-all "http.${GITHUB_SERVER_URL}/.extraheader" || true
           git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@${GITHUB_SERVER_URL#*://}/${GH_REPO}.git"
-          git push --force origin "$BRANCH"
+          npx tsx .sandcastle/agent-workflows/implement/push.ts
 
       # The PAT is load-bearing here and only here (besides the agent's gh
       # reads): a draft PR opened by the GITHUB_TOKEN fires no pull_request

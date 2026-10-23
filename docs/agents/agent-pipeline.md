@@ -21,7 +21,7 @@ either:  any failure ──▶ agent:blocked + reason comment with the run link
 3. The [Agent Implement workflow](../../.github/workflows/agent-implement.yml) fires on `agent:implement`:
    - **Preflight gates** run before any state change: sub-issues, PRD-shaped issues, and issues already closed by an open collaborator PR are refused. A refusal fails straight into the blocked path — a refused issue never shows `agent:in-progress`.
    - The trigger label is consumed (removed) and `agent:in-progress` goes on.
-   - The agent (pi CLI; provider and model come from the workflow's `AGENT_PROVIDER`/`AGENT_MODEL` env vars) works on `agent/issue-<n>-<slug>` created from `main`, commits are attributed to `tenderagent[bot]`, and the workflow force-pushes the branch and opens a draft PR titled `Fix #<n>: …` whose body closes the issue.
+   - The agent (pi CLI; provider and model come from the workflow's `AGENT_PROVIDER`/`AGENT_MODEL` env vars) works on `agent/issue-<n>-<slug>` created from `main`, commits are attributed to `tenderagent[bot]`, and the workflow pushes the branch — lease-guarded: `--force-with-lease` pinned to the remote state observed just before the push, so a retry cannot silently clobber commits another run landed on the same branch — and opens a draft PR titled `Fix #<n>: …` whose body closes the issue.
    - `agent:in-progress` comes off when the run ends, success or failure.
 4. The maintainer reviews the draft PR and merges; merging closes the issue via the closing keyword.
 
@@ -56,7 +56,7 @@ Rules for anyone editing the prompts (human or agent):
 
 ## Failure modes and recovery
 
-Three distinct failure shapes, each with its own signature and recovery. In all cases the trigger label to re-add is the one named in the blocked comment — `agent:implement` on issues, `agent:review` on PRs. Toggling `ready-for-agent` (remove, then re-add) works as an issue-side alternative: it is a fresh labeling event, and the bridge happily re-engages a blocked issue.
+The failure shapes below, each with its own signature and recovery. In all cases the trigger label to re-add is the one named in the blocked comment — `agent:implement` on issues, `agent:review` on PRs. Toggling `ready-for-agent` (remove, then re-add) works as an issue-side alternative: it is a fresh labeling event, and the bridge happily re-engages a blocked issue.
 
 ### Loud failure: LLM-provider credit exhaustion
 
@@ -76,12 +76,26 @@ Exhausted Actions minutes or a billing block is the opposite shape: **nothing ru
 
 A `ZAI_API_KEY` the provider rejects behaves like credit exhaustion from the tracker's point of view — the run fails, the subject lands in `agent:blocked` with "no commits were made on the branch". The giveaway is in the run logs: the agent step prints the raw session dump containing `"errorMessage":"401 … Authentication Failed"`, and the run summary claims a completion signal — the scan matched the echoed prompt, not real work (found in the first live validation). Fix the secret's value, re-add the trigger label.
 
+### Loud failure: push refused by the branch lease
+
+The agent step finishes green, then the *Push branch* step exits non-zero and the blocked comment names the lease conflict. The push pins the remote state it observed (`--force-with-lease`, issue #18), so this means the branch moved underneath the run — a concurrent or earlier run landed newer commits on `agent/issue-<n>-…` between this run's start and its push. The refused push left the newer work intact.
+
+- **Detection**: blocked comment / *Push branch* log shows `! [rejected] … (stale info)`, `(incorrect old value provided)`, `(reference already exists)`, or the recorded reason naming `--force-with-lease`.
+- **Recovery**: inspect `origin/agent/issue-<n>-…`. If the newer work is disposable (a stale attempt superseded by this retry — the usual case, since runs are serialized per issue and the loser outlived its slot), delete the branch (`git push origin --delete <branch>`) and re-add the trigger label — the next push then starts under an empty expectation again. If the newer work is valuable, salvage it manually instead of deleting.
+
+### Loud failure: push refused on workflow-file changes
+
+Same step, different signature: the log shows `refusing to allow a GitHub App to create or update workflow … without workflows permission` (the blocked comment names the token scope). The default `GITHUB_TOKEN` can never push commits touching `.github/workflows/` — no `permissions:` block lifts that — so any issue whose fix touches a workflow file pushes with `AGENT_PAT`, which must carry the fine-grained **Workflows: Read and write** permission (classic PAT: the `workflow` scope).
+
+- **Detection**: the recorded reason or the *Push branch* log names workflow files and the token scope.
+- **Recovery**: grant the `AGENT_PAT` secret's token the Workflows read/write permission (a maintainer action on the PAT), then re-add the trigger label. No branch cleanup is needed — the refusal happened server-side, before anything landed.
+
 ### Interrupted run: stuck `agent:in-progress`
 
 The workflows' cleanup steps run with `if: always()` and cover normal failure and cancellation, but a hard infrastructure kill (runner VM loss, an Actions incident) can bypass them, leaving the issue or PR labeled `agent:in-progress` with no live run behind it.
 
 - **Detection**: an `agent:in-progress` label whose workflow run is not actually running.
-- **Recovery**: remove the stale `agent:in-progress` and re-add the trigger label to retry. No branch cleanup is needed — the retry force-pushes the same deterministic branch name.
+- **Recovery**: remove the stale `agent:in-progress` and re-add the trigger label to retry. No branch cleanup is needed as long as nothing else wrote to the branch — the retry pushes the same deterministic branch name under a lease; if a concurrent writer did land newer commits there, the push refuses and the lease recipe above applies.
 
 ## Manual smoke test
 
@@ -89,7 +103,7 @@ Validate the whole chain on a staging issue before trusting the pipeline, and re
 
 **Prerequisites**
 
-- Repo secrets: `ZAI_API_KEY` (agent provider) and `AGENT_PAT` (fine-grained PAT for the bot identity) — `AGENT_PAT` is non-negotiable, see the bridge step above. Optional but recommended: `REVIEW_PAT` (a fine-grained PAT from a dedicated account) so the review posts as a formal review rather than a comment.
+- Repo secrets: `ZAI_API_KEY` (agent provider) and `AGENT_PAT` (fine-grained PAT for the bot identity) — `AGENT_PAT` is non-negotiable, see the bridge step above, and must include the fine-grained **Workflows: Read and write** permission so issues that touch `.github/workflows/` can push (the default `GITHUB_TOKEN` never can; see the workflow-file push recipe above). Optional but recommended: `REVIEW_PAT` (a fine-grained PAT from a dedicated account) so the review posts as a formal review rather than a comment.
 - The four `agent:*` lifecycle labels exist. The bridge and the failure handler create their own labels best-effort, but `agent:in-progress` and `agent:review` must pre-exist — `gh --add-label` silently no-ops a missing label.
 - Actions enabled and billing healthy; the failure modes above describe what their absence looks like.
 
