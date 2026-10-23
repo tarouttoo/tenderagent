@@ -40,14 +40,13 @@ try {
   const parsed = reviewPayloadSchema.safeParse(
     JSON.parse(fs.readFileSync(payloadPath, "utf8")),
   );
-  if (!parsed.success) {
-    fail(
+  const review = parsed.success
+    ? parsed.data
+    : fail(
       `The extracted review payload at ${payloadPath} is not a valid review payload: ${parsed.error.issues
         .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
         .join("; ")}`,
     );
-  }
-  const review = parsed.data;
 
   // Self-review detection: GitHub refuses a review whose author is the PR
   // author, and the token that runs this workflow opened the PR.

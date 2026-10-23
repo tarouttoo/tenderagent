@@ -4,7 +4,8 @@ import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { branchForIssue } from "./branch";
 import { buildPromptArgs, renderPrompt, type IssueComment } from "./prompt";
-import { fail, agentFromEnv, gh, required, safeSh } from "../shared/common";
+import { fail, agentFromEnv, required, safeSh } from "../shared/common";
+import { gh } from "../shared/cli";
 
 const issueNumber = required("ISSUE_NUMBER");
 const issueTitle = required("ISSUE_TITLE");

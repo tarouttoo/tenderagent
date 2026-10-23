@@ -7,7 +7,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.sandcastle.json"
   },
   "devDependencies": {
     "@ai-hero/sandcastle": "^0.12.0",

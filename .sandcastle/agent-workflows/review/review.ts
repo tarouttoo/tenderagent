@@ -105,10 +105,7 @@ try {
   );
 
   const extracted = extractReviewPayload(result.stdout);
-  if (!extracted.ok) {
-    fail(extracted.reason);
-  }
-  const review = extracted.payload;
+  const review = extracted.ok ? extracted.payload : fail(extracted.reason);
 
   const dir = outputDir();
   fs.writeFileSync(

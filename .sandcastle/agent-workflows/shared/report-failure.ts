@@ -151,4 +151,3 @@ if (invokedDirectly(import.meta.url)) {
     });
   }
 }
-}
