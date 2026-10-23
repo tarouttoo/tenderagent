@@ -1,10 +1,8 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
-
-/** Directory the workflow reads failure artifacts from. */
-export const outputDir = (): string => process.env.OUTPUT_DIR ?? "/tmp";
+import { outputDir } from "./cli";
 
 export const required = (name: string): string => {
   const value = process.env[name];
@@ -21,7 +19,6 @@ export const required = (name: string): string => {
  */
 export const fail = (message: string): never => {
   console.error(`\nFAILED: ${message}`);
-  fs.mkdirSync(outputDir(), { recursive: true });
   fs.writeFileSync(path.join(outputDir(), "failure_reason.txt"), message);
   process.exit(1);
 };
@@ -46,12 +43,6 @@ export const safeSh = (cmd: string): string => {
     return "";
   }
 };
-
-export const gh = (args: string[]): string =>
-  execFileSync("gh", args, {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
 
 /**
  * The workflow's coding agent (both the implement and the review workflow

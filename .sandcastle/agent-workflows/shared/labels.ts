@@ -178,7 +178,7 @@ export const applyLabelOps = (input: ApplyLabelOpsInput): LabelMutationResult =>
     if (input.bestEffort) {
       bestEffort([input.surface, "edit", input.subjectNumber, "--add-label", label]);
     } else {
-      run([input.surface, "edit", input.subjectNumber, "--add-label", label]);
+      run([input.surface, "edit", input.subjectNumber, "--add-label", label], env);
       result.applied += 1;
     }
   }

@@ -9,9 +9,8 @@
  *  3. An open collaborator PR already closing the issue is refused — the work
  *     is in flight; a second agent would duplicate it.
  */
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
-import { fail, gh, required } from "../shared/common";
+import { fail, required } from "../shared/common";
+import { gh, invokedDirectly } from "../shared/cli";
 
 export type OpenPullRequest = {
   number: number;
@@ -123,11 +122,7 @@ export const runPreflight = (input: PreflightInput): PreflightVerdict => {
  * (the failure-handling step turns the reason into a blocked-issue comment).
  * Reads ISSUE_NUMBER from the environment; GH_REPO/GH_TOKEN scope the calls.
  */
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-
-if (invokedDirectly) {
+if (invokedDirectly(import.meta.url)) {
   const issueNumber = Number(required("ISSUE_NUMBER"));
 
   try {

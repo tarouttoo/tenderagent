@@ -10,8 +10,8 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
-import { outputDir, required } from "../shared/common";
+import { required } from "../shared/common";
+import { invokedDirectly, outputDir } from "../shared/cli";
 
 /**
  * Filename the implement prompt tells the agent to write its draft body to,
@@ -67,11 +67,7 @@ export const resolvePrBody = (
  * and prints that path for the workflow's `body_file=$(...)` capture. Reads
  * ISSUE_NUMBER from the environment.
  */
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-
-if (invokedDirectly) {
+if (invokedDirectly(import.meta.url)) {
   const issueNumber = Number(required("ISSUE_NUMBER"));
   const body = resolvePrBody(issueNumber);
   const resolvedPath = path.join(outputDir(), RESOLVED_PR_BODY_FILE);

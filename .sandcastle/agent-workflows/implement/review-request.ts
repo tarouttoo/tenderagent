@@ -17,10 +17,9 @@
  * PAT scope. The label string is the shared `REVIEW_TRIGGER_LABEL` constant,
  * so the agent:* invariant holds by construction.
  */
-import { execFileSync } from "node:child_process";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import { fail } from "../shared/common";
+import { gh, invokedDirectly } from "../shared/cli";
 import { REVIEW_TRIGGER_LABEL } from "../shared/failure";
 
 /**
@@ -79,7 +78,7 @@ export const classifyReviewRequestFailure = (
 /** Run gh with piped output; failures come back with everything gh printed. */
 const ghRun = (args: string[]): { ok: boolean; output: string } => {
   try {
-    execFileSync("gh", args, { stdio: ["ignore", "pipe", "pipe"] });
+    gh(args);
     return { ok: true, output: "" };
   } catch (error) {
     const e = error as { stdout?: unknown; stderr?: unknown; message?: unknown };
@@ -92,11 +91,7 @@ const ghRun = (args: string[]): { ok: boolean; output: string } => {
   }
 };
 
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-
-if (invokedDirectly) {
+if (invokedDirectly(import.meta.url)) {
   const rawNumber = process.env.IMPLEMENTED_PR_NUMBER ?? "";
   if (!/^\d+$/.test(rawNumber)) {
     fail(

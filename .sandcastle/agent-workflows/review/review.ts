@@ -13,7 +13,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
-import { fail, agentFromEnv, gh, outputDir, required } from "../shared/common";
+import { fail, agentFromEnv, required } from "../shared/common";
+import { gh, outputDir } from "../shared/cli";
 import { REVIEW_TRIGGER_LABEL } from "../shared/failure";
 import { applyLabelOps, labelOps } from "../shared/labels";
 import { renderPrompt } from "../shared/prompt";
@@ -104,10 +105,7 @@ try {
   );
 
   const extracted = extractReviewPayload(result.stdout);
-  if (!extracted.ok) {
-    fail(extracted.reason);
-  }
-  const review = extracted.payload;
+  const review = extracted.ok ? extracted.payload : fail(extracted.reason);
 
   const dir = outputDir();
   fs.writeFileSync(

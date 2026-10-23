@@ -200,7 +200,7 @@ describe("push branch (integration)", () => {
     expect(hiddenSha).toBeTruthy();
     // This run rewrote its own history against the state it will observe.
     git(["commit", "--quiet", "--allow-empty", "--amend", "-m", "rewritten"], fixture.work);
-    const racerEnv = installRacer(fixture, hiddenSha);
+    const racerEnv = installRacer(fixture, hiddenSha!);
 
     const result = runPush(fixture, racerEnv);
 
@@ -236,7 +236,7 @@ describe("push branch (integration)", () => {
     ).split(/\s+/)[0];
     expect(hiddenSha).toBeTruthy();
     git(["push", "--quiet", "origin", "--delete", "agent/x"], fixture.work);
-    const racerEnv = installRacer(fixture, hiddenSha);
+    const racerEnv = installRacer(fixture, hiddenSha!);
 
     const result = runPush(fixture, racerEnv);
 

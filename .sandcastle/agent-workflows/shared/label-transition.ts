@@ -10,14 +10,13 @@
  *   label-transition.ts --surface issue|pr --number <n> \
  *     --transition start|finish --trigger <label>
  */
-import { fileURLToPath } from "node:url";
-import * as path from "node:path";
 import {
   applyLabelOps,
   labelTransition,
   type LabelSurface,
   type TransitionPhase,
 } from "./labels";
+import { invokedDirectly } from "./cli";
 
 export interface TransitionArgs {
   surface: LabelSurface;
@@ -61,11 +60,7 @@ export const parseTransitionArgs = (argv: string[]): TransitionArgs => {
   return { surface, subjectNumber, phase, triggerLabel };
 };
 
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-
-if (invokedDirectly) {
+if (invokedDirectly(import.meta.url)) {
   try {
     const args = parseTransitionArgs(process.argv.slice(2));
     applyLabelOps({
