@@ -1,5 +1,7 @@
 # tenderagent
 
+AFK agents implement triaged issues.
+
 Label-driven agent automation: triaged leaf issues are implemented and reviewed by AFK agents in GitHub Actions; humans triage, review, and merge.
 
 See [GLOSSARY.md](./GLOSSARY.md) for the automation vocabulary.
