@@ -97,6 +97,13 @@ The implement run pushed the branch and opened the draft PR, then failed at *Req
 - **Detection**: an implement run failing at *Request agent review*; the PR carries the 🚫 comment plus `agent:blocked` while the issue stays clean; the comment names the `AGENT_PAT` requirement or shows the gh refusal.
 - **Recovery**: fix the `AGENT_PAT` secret (create it, or grant its fine-grained **Pull requests: Read and write** permission), then retry on the PR: `gh pr edit <pr-number> --add-label agent:review` (removing the PR's `agent:blocked` first). Do **not** re-add `agent:implement` on the issue — preflight refuses issues already closed by an open PR. The issue needs no cleanup.
 
+### Loud failure: review refuses label mutations right after a workflow fix lands on main
+
+A review run failing at *Transition to in-progress* with `GraphQL: Resource not accessible by personal access token (addLabelsToLabelable)` — while the same step is green on fresh PRs — is usually a **stale merge ref**, not a token regression. `pull_request`-triggered runs execute the workflow from `refs/pull/<n>/merge`, and GitHub may reuse a merge ref built before a just-landed base commit (observed in the #34/#35 smoke: the base moved 39 seconds before the label event, and the run kept executing the pre-fix workflow).
+
+- **Detection**: the refusal is PAT-flavored on a step whose env carries the token pins; fetch the merge ref and check — `git fetch origin refs/pull/<n>/merge` then `git show refs/pull/<n>/merge:.github/workflows/agent-review.yml`: the fix is absent from the file the run would execute.
+- **Recovery**: refresh the merge ref by pushing an empty commit to the PR branch (`git checkout --detach` the PR head, `git commit --allow-empty`, push), wait for the ref to rebuild, then retry as usual — remove `agent:blocked`, re-add `agent:review`. Verify first that the workflow file at `refs/pull/<n>/merge` now contains the fix.
+
 ### Interrupted run: stuck `agent:in-progress`
 
 The workflows' cleanup steps run with `if: always()` and cover normal failure and cancellation, but a hard infrastructure kill (runner VM loss, an Actions incident) can bypass them, leaving the issue or PR labeled `agent:in-progress` with no live run behind it.
@@ -141,5 +148,7 @@ Validate the whole chain on a staging issue before trusting the pipeline, and re
 7. **Record the validation**: add a line under *Live validations* below (and/or a comment on the tracking issue) with the date and the staging-issue number.
 
 ### Live validations
+
+- **2026-10-23 — staging issue [#34](https://github.com/tarouttoo/tenderagent/issues/34), draft PR [#35](https://github.com/tarouttoo/tenderagent/pull/35)**: full chain green — `ready-for-agent` → bridge → implement (draft PR opened **with the agent-drafted body**, the #26 feature: pr-skill Summary / Evidence / Merge Danger, `Closes #34` first line) → automatic `agent:review` (#31's wiring, no hand) → formal review ✅ Approve → PR ready. Two finds en route, both recovered: the #32 token bug refused the review leg's label transition until #33 landed (the same root cause stalled PR #30's review), and a stale merge-ref race executed the pre-#33 review workflow on the first retry — recovery recipe above. Artifacts closed and deleted, no labels left.
 
 - **2026-10-22 — staging issue [#10](https://github.com/tarouttoo/tenderagent/issues/10), draft PR [#12](https://github.com/tarouttoo/tenderagent/pull/12)**: full chain green — `ready-for-agent` → bridge → implement (branch `agent/issue-10-smoke-add-agent-automation-line-to-readme`, commit attributed to `tenderagent[bot]`, draft PR `Closes #10`) → `agent:review` → formal review (verdict approve) → PR ready; artifacts closed and deleted, no labels left. The validation caught and fixed five pipeline defects en route: the bridge's OPEN-state casing (PR #11), the review verdict passed positionally (PR #13), the write-less `REVIEW_PAT` fallback (PR #13/#14), `gh pr ready` under `GITHUB_TOKEN` — cli/cli#8910 (PR #14), and an invalid-workflow startup failure from a duplicate permissions key (PR #15). Note: the formal review posted from the fallback identity (`github-actions[bot]`) because `REVIEW_PAT` is scoped without PR write on this repo; re-scope it if dedicated-account attribution matters.
