@@ -1,7 +1,10 @@
 name: Agent Review
 
 # Labeling a PR `agent:review` runs the review agent (pi CLI, ZAI provider via
-# env vars) grounded in the PR diff and review context. The agent emits a
+# env vars) grounded in the PR diff and review context. The label arrives on
+# its own in the happy path: the implement workflow applies it to the freshly
+# opened draft PR (#19); a maintainer re-adds it by hand only to retry a
+# blocked review. The agent emits a
 # structured payload; the workflow extracts it (unit-tested extraction, no
 # live LLM in tests), posts the findings as a regular PR review on the
 # maintainer's review surface, and marks the draft PR ready. Any failure posts
@@ -68,9 +71,16 @@ jobs:
       # workflow token, never a PAT: the job's permissions block guarantees
       # the writes, so a mis-scoped REVIEW_PAT can degrade the review verdict
       # but can never strand a PR in the pipeline (issue #17; found by the
-      # live smoke of this PR).
+      # live smoke of this PR). The step-level GH_TOKEN pin is load-bearing
+      # (#32): gh resolves its auth from the step's ambient environment, so
+      # the in-code WORKFLOW_GH_TOKEN override alone never reaches the gh
+      # subprocess and PR-surface label adds run as the job-level
+      # REVIEW_PAT — which lacks PR write on this repo (runs
+      # 39910419320/39913576270) — and are refused. Same proven pattern as
+      # the failure reporter below.
       - name: Transition to in-progress
         env:
+          GH_TOKEN: ${{ github.token }}
           WORKFLOW_GH_TOKEN: ${{ github.token }}
         run: npx -y tsx@^4 .sandcastle/agent-workflows/shared/label-transition.ts --surface pr --number "$PR_NUMBER" --transition start --trigger "agent:review"
 
@@ -143,5 +153,8 @@ jobs:
       - name: Remove in-progress label
         if: always()
         env:
+          # Same #32 pin as the start transition above: gh reads the token
+          # from the step's env, not the in-code override.
+          GH_TOKEN: ${{ github.token }}
           WORKFLOW_GH_TOKEN: ${{ github.token }}
         run: npx -y tsx@^4 .sandcastle/agent-workflows/shared/label-transition.ts --surface pr --number "$PR_NUMBER" --transition finish
