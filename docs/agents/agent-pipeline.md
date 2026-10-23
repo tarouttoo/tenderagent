@@ -10,8 +10,8 @@ A sketch of the label flow; the sections below spell out each hop:
 
 ```
 issue:   ready-for-agent ─bridge─▶ agent:implement ─implement─▶ agent:in-progress ──▶ draft PR (+ agent:in-progress removed)
-PR:      agent:review ─review─▶ agent:in-progress ──▶ formal review posted, PR ready (+ agent:in-progress removed)
-either:  any failure ──▶ agent:blocked + reason comment with the run link
+PR:      ─implement─▶ agent:review ─review─▶ agent:in-progress ──▶ formal review posted, PR ready (+ agent:in-progress removed)
+either:  any failure ──▶ agent:blocked + reason comment with the run link (on the issue before the draft PR exists, on the PR after)
 ```
 
 ### Issues (implement)
@@ -21,13 +21,13 @@ either:  any failure ──▶ agent:blocked + reason comment with the run link
 3. The [Agent Implement workflow](../../.github/workflows/agent-implement.yml) fires on `agent:implement`:
    - **Preflight gates** run before any state change: sub-issues, PRD-shaped issues, and issues already closed by an open collaborator PR are refused. A refusal fails straight into the blocked path — a refused issue never shows `agent:in-progress`.
    - The trigger label is consumed (removed) and `agent:in-progress` goes on.
-   - The agent (pi CLI; provider and model come from the workflow's `AGENT_PROVIDER`/`AGENT_MODEL` env vars) works on `agent/issue-<n>-<slug>` created from `main`, commits are attributed to `tenderagent[bot]`, and the workflow pushes the branch — lease-guarded: `--force-with-lease` pinned to the remote state observed just before the push, so a retry cannot silently clobber commits another run landed on the same branch — and opens a draft PR titled `Fix #<n>: …` whose body closes the issue.
+   - The agent (pi CLI; provider and model come from the workflow's `AGENT_PROVIDER`/`AGENT_MODEL` env vars) works on `agent/issue-<n>-<slug>` created from `main`, commits are attributed to `tenderagent[bot]`, and the workflow pushes the branch — lease-guarded: `--force-with-lease` pinned to the remote state observed just before the push, so a retry cannot silently clobber commits another run landed on the same branch — and opens a draft PR titled `Fix #<n>: …` whose body closes the issue. The same run then requests the automated review: it labels the PR `agent:review` under `AGENT_PAT` — the same event-cascade rule as the bridge (`GITHUB_TOKEN` label events never start the review workflow), so the PR → review hop needs no hand.
    - `agent:in-progress` comes off when the run ends, success or failure.
-4. The maintainer reviews the draft PR and merges; merging closes the issue via the closing keyword.
+4. The automated review lands on the PR (next section); the maintainer reads its findings, reviews, and merges. Merging closes the issue via the closing keyword.
 
 ### Pull requests (review)
 
-1. A maintainer labels the draft PR `agent:review`.
+1. The label arrives on its own: the implement workflow applies `agent:review` to the freshly opened draft PR (Story 5 is automatic). A maintainer re-adds it by hand only to retry a blocked review.
 2. The [Agent Review workflow](../../.github/workflows/agent-review.yml) consumes the label, adds `agent:in-progress`, runs the review agent over the PR diff, and posts the structured payload as a formal PR review. The PR is then marked ready and `agent:in-progress` comes off.
    - The formal review needs `REVIEW_PAT`: GitHub refuses a formal review from the PR's author, and pipeline PRs are authored by `AGENT_PAT`. Without `REVIEW_PAT` the findings degrade to a regular PR comment (the run still succeeds).
 3. Closed or merged PRs are skipped: no review, no ready flip.
@@ -36,7 +36,7 @@ Runs are serialized per subject (one concurrency group per issue / per PR), so p
 
 ### Failure path (both workflows)
 
-Any failure — a refused preflight gate, an agent error, a timeout, a manual cancellation — triggers the failure handler: a 🚫 comment lands on the issue/PR with the reason and a link to the workflow run, the subject is relabeled `agent:blocked`, and the trigger and in-progress labels are consumed. Blocked subjects never re-trigger on their own; retrying is always a human action (see the recovery recipes below).
+Any failure — a refused preflight gate, an agent error, a timeout, a manual cancellation — triggers the failure handler: a 🚫 comment lands on the subject with the reason and a link to the workflow run, the subject is relabeled `agent:blocked`, and the trigger and in-progress labels are consumed. Blocked subjects never re-trigger on their own; retrying is always a human action (see the recovery recipes below). The implement workflow's failures land on the issue until its draft PR exists; after that they land on the PR — re-implementing is refused by preflight while an open PR closes the issue, so the retry there is the PR's `agent:review`.
 
 ## Completion-signal convention
 
@@ -90,6 +90,13 @@ Same step, different signature: the log shows `refusing to allow a GitHub App to
 - **Detection**: the recorded reason or the *Push branch* log names workflow files and the token scope.
 - **Recovery**: grant the `AGENT_PAT` secret's token the Workflows read/write permission (a maintainer action on the PAT), then re-add the trigger label. No branch cleanup is needed — the refusal happened server-side, before anything landed.
 
+### Loud failure: the review request failed (draft PR opened, review never requested)
+
+The implement run pushed the branch and opened the draft PR, then failed at *Request agent review*. The step runs under `AGENT_PAT` alone — the default `GITHUB_TOKEN`'s label events never start the review workflow, so there is no fallback — and a missing or under-scoped PAT is the dominant cause. The blocked comment lands on the **PR**, not the issue, with the retry spelled out.
+
+- **Detection**: an implement run failing at *Request agent review*; the PR carries the 🚫 comment plus `agent:blocked` while the issue stays clean; the comment names the `AGENT_PAT` requirement or shows the gh refusal.
+- **Recovery**: fix the `AGENT_PAT` secret (create it, or grant its fine-grained **Pull requests: Read and write** permission), then retry on the PR: `gh pr edit <pr-number> --add-label agent:review` (removing the PR's `agent:blocked` first). Do **not** re-add `agent:implement` on the issue — preflight refuses issues already closed by an open PR. The issue needs no cleanup.
+
 ### Interrupted run: stuck `agent:in-progress`
 
 The workflows' cleanup steps run with `if: always()` and cover normal failure and cancellation, but a hard infrastructure kill (runner VM loss, an Actions incident) can bypass them, leaving the issue or PR labeled `agent:in-progress` with no live run behind it.
@@ -105,7 +112,7 @@ Validate the whole chain on a staging issue before trusting the pipeline, and re
 
 - Repo secrets: `ZAI_API_KEY` (agent provider) and `AGENT_PAT` (fine-grained PAT for the bot identity) — `AGENT_PAT` is non-negotiable, see the bridge step above, and must include the fine-grained **Workflows: Read and write** permission so issues that touch `.github/workflows/` can push (the default `GITHUB_TOKEN` never can; see the workflow-file push recipe above).
 - `REVIEW_PAT` (optional but recommended; a fine-grained PAT from a dedicated account): the review workflow's preferred identity, first in the `REVIEW_PAT || AGENT_PAT || GITHUB_TOKEN` chain. Its purpose: the review verdict posts as a **formal PR review**, which GitHub refuses from the PR's author — and pipeline PRs are authored by `AGENT_PAT` — so a non-author identity is needed. Without it the run still succeeds, but the findings degrade to a regular PR comment instead of a formal review; a `REVIEW_PAT` scoped without PR write degrades more gracefully still, re-posting the formal review under the workflow token's identity (`FALLBACK_GH_TOKEN`). This is the one addition to spec #1's token strategy, which names only `AGENT_PAT`; the deviation is noted on #1.
-- The four `agent:*` lifecycle labels exist. The bridge and the failure handler create their own labels best-effort, but `agent:in-progress` and `agent:review` must pre-exist — `gh --add-label` silently no-ops a missing label.
+- The four `agent:*` lifecycle labels exist. The bridge, the review request, and the failure handlers create their labels best-effort, but `agent:in-progress` must pre-exist — the run transitions' `--add-label` silently no-ops a missing label; pre-creating all four keeps manual retries working.
 - Actions enabled and billing healthy; the failure modes above describe what their absence looks like.
 
 **Steps**
@@ -119,10 +126,9 @@ Validate the whole chain on a staging issue before trusting the pipeline, and re
 
 2. **Label it for the agent**: `gh issue edit <n> --add-label ready-for-agent`.
 3. **Expect the bridge** (seconds): a *Triage Bridge* run that adds `agent:implement`.
-4. **Expect the implementer** (minutes — a real LLM run): an *Agent Implement* run that swaps the trigger label for `agent:in-progress`, then produces the branch `agent/issue-<n>-<slug>` and a draft PR `Fix #<n>: …` with `Closes #<n>` in the body; `agent:in-progress` comes off when it finishes. A 🚫 comment plus `agent:blocked` here is the loud-failure path working as designed — read the comment, fix, retry.
-5. **Request the review**: label the draft PR `agent:review`.
-6. **Expect the reviewer** (minutes): an *Agent Review* run that posts a formal review (verdict + findings) from the `REVIEW_PAT` identity and flips the PR to ready.
-7. **Clean up** — smoke artifacts are disposable; never merge them:
+4. **Expect the implementer** (minutes — a real LLM run): an *Agent Implement* run that swaps the trigger label for `agent:in-progress`, then produces the branch `agent/issue-<n>-<slug>` and a draft PR `Fix #<n>: …` with `Closes #<n>` in the body; when it finishes, `agent:in-progress` comes off the issue and the same run's *Request agent review* step labels the PR `agent:review`. A 🚫 comment plus `agent:blocked` here is the loud-failure path working as designed — read the comment, fix, retry (on the PR, if the failure came after the PR opened).
+5. **Expect the reviewer** (minutes): an *Agent Review* run, triggered by the automatic `agent:review` label, that posts a formal review (verdict + findings) from the `REVIEW_PAT` identity and flips the PR to ready.
+6. **Clean up** — smoke artifacts are disposable; never merge them:
 
    ```bash
    gh pr close <pr-number> --delete-branch
@@ -132,7 +138,7 @@ Validate the whole chain on a staging issue before trusting the pipeline, and re
 
    Then confirm nothing stray remains: no open draft PR, no `agent/issue-<n>-*` branch, no lifecycle labels left on the staging issue.
 
-8. **Record the validation**: add a line under *Live validations* below (and/or a comment on the tracking issue) with the date and the staging-issue number.
+7. **Record the validation**: add a line under *Live validations* below (and/or a comment on the tracking issue) with the date and the staging-issue number.
 
 ### Live validations
 
