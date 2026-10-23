@@ -13,8 +13,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
-import { fail, agentFromEnv, gh, outputDir, required, safeSh } from "../shared/common";
+import { fail, agentFromEnv, gh, outputDir, required } from "../shared/common";
 import { REVIEW_TRIGGER_LABEL } from "../shared/failure";
+import { applyLabelOps, labelOps } from "../shared/labels";
 import { renderPrompt } from "../shared/prompt";
 import { buildReviewPromptArgs } from "./prompt";
 import { extractReviewPayload, formatReviewBody } from "./payload";
@@ -41,11 +42,18 @@ try {
 
   // Closed and merged PRs cannot be reviewed; skipping is a no-op with a
   // reason, not a failure (the trigger label is consumed so the PR does not
-  // sit in the pipeline forever, and no blocked noise is posted).
+  // sit in the pipeline forever, and no blocked noise is posted). The
+  // consumption is a label mutation: it goes through the shared guarded path
+  // under the workflow token (WORKFLOW_GH_TOKEN), never the PAT — and unlike
+  // the old silent safeSh call, gh failures are logged instead of swallowed.
+  // A missing workflow token still throws before any gh call, failing the
+  // run into the blocked path (issue #17).
   if (pr.state !== "OPEN") {
-    safeSh(
-      `gh pr edit ${prNumber} --remove-label ${JSON.stringify(REVIEW_TRIGGER_LABEL)}`,
-    );
+    applyLabelOps({
+      surface: "pr",
+      subjectNumber: prNumber,
+      ops: labelOps([REVIEW_TRIGGER_LABEL], []),
+    });
     // Tell the workflow to skip the post/ready steps — process.exit(0) only
     // ends this step, and the posting step must not run without a payload.
     const githubOutput = process.env.GITHUB_OUTPUT;

@@ -43,7 +43,9 @@ jobs:
       # PRs are authored by AGENT_PAT, so the review agent needs its own
       # identity to post a real gh pr review verdict; without REVIEW_PAT the
       # run falls back to AGENT_PAT/GITHUB_TOKEN and post-review.ts degrades
-      # to a PR comment instead of failing.
+      # to a PR comment instead of failing. Lifecycle label mutations never
+      # ride this variable: they run as the workflow's own token via
+      # WORKFLOW_GH_TOKEN and the shared guarded path (shared/labels.ts).
       GH_TOKEN: ${{ secrets.REVIEW_PAT || secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
 
@@ -62,16 +64,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Lifecycle label mutations use the workflow's own token, never the
-      # PAT: the job's permissions block guarantees the writes, so a
-      # mis-scoped REVIEW_PAT can degrade the review verdict but can never
-      # strand a PR in the pipeline (found by the live smoke of this PR).
+      # Lifecycle label mutations go through the shared guarded path as the
+      # workflow token, never a PAT: the job's permissions block guarantees
+      # the writes, so a mis-scoped REVIEW_PAT can degrade the review verdict
+      # but can never strand a PR in the pipeline (issue #17; found by the
+      # live smoke of this PR).
       - name: Transition to in-progress
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh pr edit "$PR_NUMBER" --remove-label "agent:review" || true
-          gh pr edit "$PR_NUMBER" --add-label "agent:in-progress"
+          WORKFLOW_GH_TOKEN: ${{ github.token }}
+        run: npx -y tsx@^4 .sandcastle/agent-workflows/shared/label-transition.ts --surface pr --number "$PR_NUMBER" --transition start --trigger "agent:review"
 
       - name: Install pi CLI
         run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
@@ -80,6 +81,9 @@ jobs:
         id: review
         env:
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+          # The skip path (closed PR) consumes the trigger label through the
+          # shared guarded path — as the workflow token, never the PAT.
+          WORKFLOW_GH_TOKEN: ${{ github.token }}
           # fail() records failure_reason.txt here; review-payload.json for
           # the poster lands here too. runner context is step-level only.
           OUTPUT_DIR: ${{ runner.temp }}
@@ -124,10 +128,11 @@ jobs:
         env:
           OUTPUT_DIR: ${{ runner.temp }}
           GH_TOKEN: ${{ github.token }}
+          WORKFLOW_GH_TOKEN: ${{ github.token }}
         run: npx -y tsx@^4 .sandcastle/agent-workflows/review/report-failure.ts
 
       - name: Remove in-progress label
         if: always()
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh pr edit "$PR_NUMBER" --remove-label "agent:in-progress" || true
+          WORKFLOW_GH_TOKEN: ${{ github.token }}
+        run: npx -y tsx@^4 .sandcastle/agent-workflows/shared/label-transition.ts --surface pr --number "$PR_NUMBER" --transition finish
