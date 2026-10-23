@@ -33,6 +33,25 @@ describe("resolvePrBody", () => {
     expect(resolvePrBody(26, outputDir)).toBe(draft);
   });
 
+  it("prepends the closing keyword to a draft that opens without it", () => {
+    const outputDir = makeOutputDir();
+    const draft = "## Summary\n\nThe agent forgot the keyword.\n";
+    writeFileSync(path.join(outputDir, PR_BODY_FILE), draft);
+
+    const body = resolvePrBody(26, outputDir);
+    expect(body.startsWith("Closes #26\n\n")).toBe(true);
+    expect(body).toContain("The agent forgot the keyword.");
+  });
+
+  it("does not mistake another issue's keyword for this one (#26 vs #267)", () => {
+    const outputDir = makeOutputDir();
+    const draft = "Closes #267\n\nWrong issue entirely.\n";
+    writeFileSync(path.join(outputDir, PR_BODY_FILE), draft);
+
+    const body = resolvePrBody(26, outputDir);
+    expect(body.startsWith("Closes #26\n\n")).toBe(true);
+  });
+
   it("falls back to the canned stub when pr-body.md is absent", () => {
     const outputDir = makeOutputDir();
 

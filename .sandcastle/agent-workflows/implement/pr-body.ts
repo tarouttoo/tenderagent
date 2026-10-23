@@ -35,8 +35,11 @@ export const cannedBody = (issueNumber: number): string =>
 
 /**
  * The body the draft PR gets: the agent's `pr-body.md` draft when present
- * and non-empty, the canned stub otherwise. Never throws — a missing draft
- * is a fallback, not a failure.
+ * and non-empty, the canned stub otherwise. A draft that doesn't open with
+ * this issue's closing keyword gets `Closes #<n>` prepended, so the
+ * runbook's "the body's first line is `Closes #<n>`" holds either way and
+ * merging the PR still closes the issue. Never throws — a missing draft is
+ * a fallback, not a failure.
  */
 export const resolvePrBody = (
   issueNumber: number,
@@ -45,7 +48,13 @@ export const resolvePrBody = (
   try {
     const draft = fs.readFileSync(path.join(dir, PR_BODY_FILE), "utf8");
     if (draft.trim().length > 0) {
-      return draft;
+      const opensWithKeyword = new RegExp(
+        `^Closes #${issueNumber}\\b`,
+      ).test(draft.trimStart());
+      if (opensWithKeyword) {
+        return draft;
+      }
+      return `Closes #${issueNumber}\n\n${draft}`;
     }
   } catch {
     // Absent or unreadable draft — soft gate, fall through to the stub.
