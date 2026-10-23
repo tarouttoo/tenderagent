@@ -97,3 +97,36 @@ describe("renderPrompt", () => {
     expect(prompt).toContain("<promise>COMPLETE</promise>");
   });
 });
+
+describe("prompt skeleton: PR body drafting", () => {
+  const skeleton = readFileSync(path.join(import.meta.dirname, "prompt.md"), "utf8");
+
+  it("inlines the pr-skill template — runners have no user-level skills", () => {
+    expect(skeleton).toContain("## Summary");
+    expect(skeleton).toContain("## Evidence");
+    expect(skeleton).toContain("## Merge Danger");
+  });
+
+  it("tells the agent to write pr-body.md to OUTPUT_DIR before the completion signal", () => {
+    expect(skeleton).toContain("pr-body.md");
+    expect(skeleton).toContain("OUTPUT_DIR");
+    const bodySection = skeleton.indexOf("pr-body.md");
+    const signal = skeleton.indexOf("<promise>COMPLETE</promise>");
+    expect(bodySection).toBeGreaterThan(-1);
+    expect(signal).toBeGreaterThan(bodySection);
+  });
+
+  it("keeps the closing keyword as the body's first line", () => {
+    expect(skeleton).toContain("Closes #{{ISSUE_NUMBER}}");
+  });
+
+  it("ends with the completion signal as the last line of the final section", () => {
+    const nonEmptyLines = skeleton
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+
+    expect(nonEmptyLines[nonEmptyLines.length - 1]).toBe(
+      "When complete, output `<promise>COMPLETE</promise>`.",
+    );
+  });
+});

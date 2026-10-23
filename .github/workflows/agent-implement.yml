@@ -137,18 +137,23 @@ jobs:
       # GITHUB_TOKEN fires no pull_request events, so CI and the review
       # workflow would never run. Creating a PR is not a label mutation — the
       # token boundary of issue #17 covers lifecycle run transitions only.
+      # The body comes from the resolver (implement/pr-body.ts): the agent's
+      # pr-body.md draft — written before the completion signal per the prompt's
+      # PR BODY section — when present, the canned stub otherwise. A missing
+      # draft is a soft gate: it changes the body, never fails the run, so
+      # style never lands in agent:blocked. Either way the body's first line
+      # is Closes #<n> (the resolver prepends the keyword to a draft that
+      # lacks it), so merging still closes the issue.
       - name: Open draft PR
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
+          # Same directory the agent wrote its pr-body.md draft to; step-level
+          # because the runner context is (see the Run implementation step).
+          OUTPUT_DIR: ${{ runner.temp }}
         run: |
           title="Fix #${ISSUE_NUMBER}: ${ISSUE_TITLE}"
           title="${title:0:256}"
-          body_file="${RUNNER_TEMP}/pr-body.md"
-          {
-            echo "Closes #${ISSUE_NUMBER}"
-            echo
-            echo "Implemented by the agent implement workflow."
-          } > "$body_file"
+          body_file=$(npx tsx .sandcastle/agent-workflows/implement/pr-body.ts)
           pr_url=$(gh pr create --draft --base "$TARGET_BRANCH" --head "$BRANCH" --title "$title" --body-file "$body_file")
           echo "$pr_url"
           # Handed to the review request below and to the failure reporter:
