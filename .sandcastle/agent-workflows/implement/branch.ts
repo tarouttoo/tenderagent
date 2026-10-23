@@ -2,9 +2,8 @@
  * Branch naming for the implement workflow: work lands on an isolated branch
  * named after the issue — `agent/issue-<n>-<slug>`.
  */
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import { required } from "../shared/common";
+import { invokedDirectly } from "../shared/cli";
 
 /** Maximum length of the title slug in the branch name. */
 export const MAX_SLUG_LENGTH = 50;
@@ -40,11 +39,7 @@ export const branchForIssue = (issueNumber: number, title: string): string => {
  * CLI entry: prints the branch name for the workflow's compute-branch step.
  * Reads ISSUE_NUMBER and ISSUE_TITLE from the environment.
  */
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-
-if (invokedDirectly) {
+if (invokedDirectly(import.meta.url)) {
   const issueNumber = Number(required("ISSUE_NUMBER"));
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
     console.error("ISSUE_NUMBER must be a positive integer");

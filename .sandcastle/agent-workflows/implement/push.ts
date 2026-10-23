@@ -9,10 +9,9 @@
  * actual cause instead of "failed without a recorded reason".
  */
 import { execFileSync } from "node:child_process";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import { fail, required } from "../shared/common";
 import { TRIGGER_LABEL } from "../shared/failure";
+import { invokedDirectly } from "../shared/cli";
 
 /** The fully-qualified ref the workflow pushes to for the agent branch. */
 export const remoteRef = (branch: string): string => `refs/heads/${branch}`;
@@ -171,10 +170,6 @@ export const pushBranch = (branch: string): PushOutcome => {
   return "lease-guarded";
 };
 
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-
-if (invokedDirectly) {
+if (invokedDirectly(import.meta.url)) {
   pushBranch(required("BRANCH"));
 }

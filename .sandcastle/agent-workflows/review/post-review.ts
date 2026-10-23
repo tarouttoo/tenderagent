@@ -11,14 +11,9 @@
  * Marking the PR ready is the workflow's next step, not this script's.
  */
 import * as fs from "node:fs";
-import { execFileSync } from "node:child_process";
 import * as path from "node:path";
-import {
-  fail,
-  gh,
-  outputDir,
-  required,
-} from "../shared/common";
+import { fail, required } from "../shared/common";
+import { gh, outputDir } from "../shared/cli";
 import {
   formatReviewBody,
   reviewPayloadSchema,
@@ -37,11 +32,7 @@ const prNumber = required("PR_NUMBER");
 const ghFallback = (args: string[]): string => {
   const override = process.env.FALLBACK_GH_TOKEN;
   if (!override) return gh(args);
-  return execFileSync("gh", args, {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, GH_TOKEN: override },
-  });
+  return gh(args, { env: { ...process.env, GH_TOKEN: override } });
 };
 
 try {

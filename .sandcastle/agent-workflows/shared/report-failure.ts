@@ -6,13 +6,12 @@
  * and workflow name — see `reportFailure`.
  *
  * Deliberately dependency-free — it imports only node builtins and the pure
- * shared modules (`failure.ts`, `labels.ts`) — so it runs via `npx tsx` even
- * when `npm ci` or the agent setup itself is what failed.
+ * shared modules (`failure.ts`, `labels.ts`, `cli.ts`) — so it runs via
+ * `npx tsx` even when `npm ci` or the agent setup itself is what failed.
  */
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
+import { ghBestEffort, invokedDirectly, outputDir } from "./cli";
 import {
   blockedLabelOps,
   formatBlockedComment,
@@ -22,12 +21,6 @@ import {
 import { applyLabelOps } from "./labels";
 
 const env = (name: string): string => process.env[name] ?? "";
-
-const outputDir = (): string => {
-  const dir = env("OUTPUT_DIR") || "/tmp";
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-};
 
 /** The reason recorded by `fail()` in shared/common.ts, when there was one. */
 const recordedReason = (workflowName: string): string => {
@@ -40,19 +33,6 @@ const recordedReason = (workflowName: string): string => {
     // fall through to the generic reason
   }
   return `The ${workflowName} failed without a recorded reason; check the workflow run logs for details.`;
-};
-
-/** Best-effort gh call: logs failures, never throws (the run already failed). */
-const gh = (args: string[]): boolean => {
-  try {
-    execFileSync("gh", args, { stdio: ["ignore", "pipe", "pipe"] });
-    return true;
-  } catch (error) {
-    console.error(
-      `gh ${args.join(" ")} failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return false;
-  }
 };
 
 export interface FailureReportConfig {
@@ -102,7 +82,15 @@ export const reportFailure = (config: FailureReportConfig): void => {
     }),
   );
 
-  if (gh([surface, "comment", subjectNumber, "--body-file", commentPath])) {
+  if (
+    ghBestEffort([
+      surface,
+      "comment",
+      subjectNumber,
+      "--body-file",
+      commentPath,
+    ])
+  ) {
     console.log(
       `Posted the failure comment on ${config.subjectKind} #${subjectNumber}.`,
     );
@@ -136,11 +124,7 @@ export const reportFailure = (config: FailureReportConfig): void => {
  * issue-flavored case (see agent-implement.yml). The review workflow wraps
  * `reportFailure` from its own entry instead.
  */
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-
-if (invokedDirectly) {
+if (invokedDirectly(import.meta.url)) {
   reportFailure({
     subjectKind: "issue",
     numberEnv: "ISSUE_NUMBER",

@@ -9,14 +9,12 @@
  * All decisions run against the issue's *current* state and labels, not the
  * stale event payload, so rapid triage toggles resolve to the latest intent.
  */
-import { execFileSync } from "node:child_process";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   assertOnlyAgentLabels,
   IN_PROGRESS_LABEL,
   TRIGGER_LABEL,
 } from "../shared/failure";
+import { gh, ghBestEffort, invokedDirectly } from "../shared/cli";
 
 /** The human triage label that fires the bridge. */
 export const BRIDGE_TRIAGE_LABEL = "ready-for-agent";
@@ -91,37 +89,8 @@ export const bridgeDecision = (input: BridgeInput): BridgeVerdict => {
  * exit 0 — a skipped bridge is a no-op, not a failure. Reads ISSUE_NUMBER and
  * EVENT_LABEL from the environment; GH_REPO/GH_TOKEN scope the calls.
  */
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-
-if (invokedDirectly) {
+if (invokedDirectly(import.meta.url)) {
   const env = (name: string): string => process.env[name] ?? "";
-
-  const gh = (args: string[]): string => {
-    try {
-      return execFileSync("gh", args, {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-    } catch (error) {
-      console.error(
-        `gh ${args.join(" ")} failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      process.exit(1);
-    }
-  };
-
-  /** Best-effort gh call: logs failures, keeps going. */
-  const ghBestEffort = (args: string[]): void => {
-    try {
-      execFileSync("gh", args, { stdio: ["ignore", "pipe", "pipe"] });
-    } catch (error) {
-      console.error(
-        `gh ${args.join(" ")} failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  };
 
   const issueNumber = env("ISSUE_NUMBER");
   const eventLabel = env("EVENT_LABEL");
@@ -161,7 +130,7 @@ if (invokedDirectly) {
     );
   } catch (error) {
     console.error(
-      `Bridge could not gather its evidence: ${error instanceof Error ? error.message : String(error)}`,
+      `Bridge failed: ${error instanceof Error ? error.message : String(error)}`,
     );
     process.exit(1);
   }
