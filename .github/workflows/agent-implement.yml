@@ -103,10 +103,20 @@ jobs:
           OUTPUT_DIR: ${{ runner.temp }}
         run: npx tsx .sandcastle/agent-workflows/implement/implement.ts
 
+      # Push under the workflow GITHUB_TOKEN, not the PAT: the agent's commits
+      # may add or update workflow files, and a PAT without the `workflow`
+      # scope is refused exactly that push (the #17 run died here after a
+      # fully green agent run). The job's contents:write covers a
+      # GITHUB_TOKEN push; unsetting checkout's stored auth header is what
+      # makes the push actually use the token below.
       - name: Push branch
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
-        run: git push --force origin "$BRANCH"
+          PUSH_TOKEN: ${{ github.token }}
+        run: |
+          git config --unset-all "http.${GITHUB_SERVER_URL}/.extraheader" || true
+          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@${GITHUB_SERVER_URL#*://}/${GH_REPO}.git"
+          git push --force origin "$BRANCH"
 
       # The PAT is load-bearing here and only here (besides the agent's gh
       # reads): a draft PR opened by the GITHUB_TOKEN fires no pull_request
