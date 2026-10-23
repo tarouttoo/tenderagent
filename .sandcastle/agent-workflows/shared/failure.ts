@@ -92,23 +92,3 @@ export const formatBlockedComment = ({
     `_Retry by re-adding the \`${retryLabel}\` label._`,
   ].join("\n");
 };
-
-/**
- * The implement workflow's blocked-issue comment: the issue-shaped case of
- * `formatBlockedComment`, retrying via the implement trigger label.
- */
-export const formatFailureComment = ({
-  issueNumber,
-  reason,
-  runUrl,
-}: {
-  issueNumber: number;
-  reason: string;
-  runUrl: string;
-}): string =>
-  formatBlockedComment({
-    subject: { kind: "issue", number: issueNumber },
-    reason,
-    runUrl,
-    retryLabel: TRIGGER_LABEL,
-  });

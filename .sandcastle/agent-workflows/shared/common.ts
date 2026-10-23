@@ -29,10 +29,20 @@ export const fail = (message: string): never => {
 export const sh = (cmd: string): string =>
   execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
+/**
+ * Best-effort `sh`: "safe" buys a non-fatal path for advisory calls only —
+ * a failed command is logged (stderr, like the failure reporter's gh calls)
+ * and yields "" instead of throwing the run into `fail()`. Callers must read
+ * "" as "unknown", never as a value; anything that gates the run's outcome
+ * belongs to `sh`, whose failure is handled loudly.
+ */
 export const safeSh = (cmd: string): string => {
   try {
     return sh(cmd);
-  } catch {
+  } catch (error) {
+    console.error(
+      `${cmd} failed (continuing with ""): ${error instanceof Error ? error.message : String(error)}`,
+    );
     return "";
   }
 };
@@ -44,7 +54,8 @@ export const gh = (args: string[]): string =>
   });
 
 /**
- * The implementation agent: pi CLI over the provider/model named by the
+ * The workflow's coding agent (both the implement and the review workflow
+ * build one this way): pi CLI over the provider/model named by the
  * workflow's env vars (`AGENT_PROVIDER`/`AGENT_MODEL`, e.g. `zai` +
  * `glm-5.3-flash`), authenticated via the `ZAI_API_KEY` secret.
  */

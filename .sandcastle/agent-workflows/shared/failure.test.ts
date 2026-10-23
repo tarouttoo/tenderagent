@@ -3,64 +3,7 @@ import {
   assertOnlyAgentLabels,
   blockedLabelOps,
   formatBlockedComment,
-  formatFailureComment,
 } from "./failure";
-
-const input = {
-  issueNumber: 4,
-  reason: "Issue #4 has sub-issues; only leaf issues are implemented.",
-  runUrl: "https://github.com/tarouttoo/tenderagent/actions/runs/1234567890",
-};
-
-describe("formatFailureComment", () => {
-  it("renders the reason as a bullet", () => {
-    const comment = formatFailureComment(input);
-    expect(comment).toContain(
-      "- Issue #4 has sub-issues; only leaf issues are implemented.",
-    );
-  });
-
-  it("links the workflow run", () => {
-    const comment = formatFailureComment(input);
-    expect(comment).toContain(
-      "[View workflow run](https://github.com/tarouttoo/tenderagent/actions/runs/1234567890)",
-    );
-  });
-
-  it("names the issue in the header", () => {
-    expect(formatFailureComment(input)).toContain("issue #4");
-  });
-
-  it("explains how to retry by re-adding the trigger label", () => {
-    const comment = formatFailureComment(input);
-    expect(comment).toContain("`agent:implement`");
-    expect(comment).toMatch(/re-add/i);
-  });
-
-  it("renders multi-line reasons as one bullet per line", () => {
-    const comment = formatFailureComment({
-      ...input,
-      reason: "First refusal reason.\nSecond refusal reason.",
-    });
-    expect(comment).toContain("- First refusal reason.");
-    expect(comment).toContain("- Second refusal reason.");
-  });
-
-  it("strips leading dashes so reasons never render as nested lists", () => {
-    const comment = formatFailureComment({
-      ...input,
-      reason: "- already a dash",
-    });
-    expect(comment).toContain("- already a dash");
-    expect(comment).not.toContain("-- already a dash");
-  });
-
-  it("degrades gracefully when the run link is unavailable", () => {
-    const comment = formatFailureComment({ ...input, runUrl: "" });
-    expect(comment).toMatch(/workflow run link is unavailable/i);
-    expect(comment).not.toContain("()");
-  });
-});
 
 describe("assertOnlyAgentLabels", () => {
   it("accepts agent:* lifecycle labels", () => {
@@ -136,5 +79,44 @@ describe("formatBlockedComment", () => {
     expect(() =>
       formatBlockedComment({ ...prInput, retryLabel: "ready-for-agent" }),
     ).toThrow(/automation only writes agent:/i);
+  });
+
+  // The issue-shaped case (the implement workflow's blocked comments, via
+  // report-failure.ts's direct invocation) shares every rendering behavior
+  // with the PR shape above; these pin the ones only the issue shape used
+  // to cover.
+  const issueInput = {
+    subject: { kind: "issue" as const, number: 4 },
+    reason: "Issue #4 has sub-issues; only leaf issues are implemented.",
+    runUrl: "https://github.com/tarouttoo/tenderagent/actions/runs/1234567890",
+    retryLabel: "agent:implement",
+  };
+
+  it("names the issue in the header", () => {
+    expect(formatBlockedComment(issueInput)).toContain("issue #4");
+  });
+
+  it("renders multi-line reasons as one bullet per line", () => {
+    const comment = formatBlockedComment({
+      ...issueInput,
+      reason: "First refusal reason.\nSecond refusal reason.",
+    });
+    expect(comment).toContain("- First refusal reason.");
+    expect(comment).toContain("- Second refusal reason.");
+  });
+
+  it("strips leading dashes so reasons never render as nested lists", () => {
+    const comment = formatBlockedComment({
+      ...issueInput,
+      reason: "- already a dash",
+    });
+    expect(comment).toContain("- already a dash");
+    expect(comment).not.toContain("-- already a dash");
+  });
+
+  it("degrades gracefully when the run link is unavailable", () => {
+    const comment = formatBlockedComment({ ...issueInput, runUrl: "" });
+    expect(comment).toMatch(/workflow run link is unavailable/i);
+    expect(comment).not.toContain("()");
   });
 });
