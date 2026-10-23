@@ -3,9 +3,12 @@ name: Agent Implement
 # Labeling a leaf issue `agent:implement` runs preflight gates (refuse
 # sub-issues, PRD-shaped issues, and issues already closed by an open
 # collaborator PR), then the implementation agent on an isolated branch, then
-# opens a draft PR to main that closes the issue. Any failure posts a reason
-# comment with the workflow-run link and relabels the issue `agent:blocked`;
-# retrying means re-adding the trigger label.
+# opens a draft PR to main that closes the issue and requests the automated
+# review by labeling the PR `agent:review` (the PR→review hop is automatic,
+# #19 — Story 5 needs no hand). Any failure posts a reason comment with the
+# workflow-run link and relabels the subject `agent:blocked` — on the issue
+# until the draft PR exists, on the PR afterwards; retrying means re-adding
+# the trigger label named in the blocked comment.
 on:
   issues:
     types: [labeled]
@@ -130,16 +133,17 @@ jobs:
           npx tsx .sandcastle/agent-workflows/implement/push.ts
 
       # The PAT is load-bearing here and only here (besides the agent's gh
-      # reads): a draft PR opened by the GITHUB_TOKEN fires no pull_request
-      # events, so CI and the review workflow would never run. Creating a PR
-      # is not a label mutation — the token boundary of issue #17 covers
-      # label transitions only.
+      # reads and the review request below): a draft PR opened by the
+      # GITHUB_TOKEN fires no pull_request events, so CI and the review
+      # workflow would never run. Creating a PR is not a label mutation — the
+      # token boundary of issue #17 covers lifecycle run transitions only.
       # The body comes from the resolver (implement/pr-body.ts): the agent's
       # pr-body.md draft — written before the completion signal per the prompt's
       # PR BODY section — when present, the canned stub otherwise. A missing
       # draft is a soft gate: it changes the body, never fails the run, so
-      # style never lands in agent:blocked. The canned stub keeps the Closes
-      # #<n> first line, so merging still closes the issue either way.
+      # style never lands in agent:blocked. Either way the body's first line
+      # is Closes #<n> (the resolver prepends the keyword to a draft that
+      # lacks it), so merging still closes the issue.
       - name: Open draft PR
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
@@ -150,14 +154,42 @@ jobs:
           title="Fix #${ISSUE_NUMBER}: ${ISSUE_TITLE}"
           title="${title:0:256}"
           body_file=$(npx tsx .sandcastle/agent-workflows/implement/pr-body.ts)
-          gh pr create --draft --base "$TARGET_BRANCH" --head "$BRANCH" --title "$title" --body-file "$body_file"
+          pr_url=$(gh pr create --draft --base "$TARGET_BRANCH" --head "$BRANCH" --title "$title" --body-file "$body_file")
+          echo "$pr_url"
+          # Handed to the review request below and to the failure reporter:
+          # from this point the work item is the PR, so a later failure
+          # reports on the PR (retry by agent:review) instead of the issue.
+          echo "IMPLEMENTED_PR_NUMBER=${pr_url##*/}" >> "$GITHUB_ENV"
+
+      # Story 5 fully automatic (#19): the fresh draft PR is labeled
+      # agent:review, which fires the Agent Review workflow — the PR→review
+      # hop, mirroring the bridge's issue→implement hop. The step-level
+      # GH_TOKEN drops the job-level GITHUB_TOKEN fallback on purpose: label
+      # events fired by the default token never start other workflow runs, so
+      # a silent fallback would leave the PR unlabeled with no review and no
+      # failure (the bridge carries the same AGENT_PAT-only rule). This add
+      # is a trigger, not a run transition: it deliberately bypasses the
+      # guarded lifecycle path (shared/labels.ts), whose workflow-token rule
+      # covers transitions and failure relabels; the label string is the
+      # shared REVIEW_TRIGGER_LABEL constant, and a missing agent:review repo
+      # label is created best-effort first (gh silently no-ops --add-label
+      # for a label the repo lacks). Any failure lands on the PR via the
+      # failure reporter below, retrying by re-adding agent:review there.
+      - name: Request agent review
+        env:
+          GH_TOKEN: ${{ secrets.AGENT_PAT }}
+        run: npx tsx .sandcastle/agent-workflows/implement/review-request.ts
 
       # Failure handling: post the reason comment (with the run link) and
-      # relabel the issue agent:blocked, removing the trigger label. Runs on
-      # cancellation too — the trigger label is already consumed by then, so a
-      # cancelled run must not leave the issue label-less and silent. The
-      # reporter is dependency-free, so it also runs when npm ci or the agent
-      # setup itself failed; a fresh checkout guarantees the script is present.
+      # relabel the subject agent:blocked, removing the trigger label. The
+      # surface follows the work item: on the issue until the draft PR exists
+      # (retry by re-adding agent:implement), on the PR afterwards (retry by
+      # re-adding agent:review there — re-implementing would be refused by
+      # preflight while the PR is open). Runs on cancellation too — the
+      # trigger label is already consumed by then, so a cancelled run must
+      # not leave the subject label-less and silent. The reporter is
+      # dependency-free, so it also runs when npm ci or the agent setup
+      # itself failed; a fresh checkout guarantees the script is present.
       - name: Checkout for failure reporter
         if: ${{ !success() }}
         uses: actions/checkout@v4
