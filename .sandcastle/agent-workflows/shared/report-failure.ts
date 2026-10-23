@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import {
   blockedLabelOps,
   formatBlockedComment,
+  REVIEW_TRIGGER_LABEL,
   TRIGGER_LABEL,
   type BlockedSubject,
 } from "./failure";
@@ -132,19 +133,37 @@ export const reportFailure = (config: FailureReportConfig): void => {
 };
 
 /**
- * Direct invocation is the implement workflow's failure handler: the
- * issue-flavored case (see agent-implement.yml). The review workflow wraps
- * `reportFailure` from its own entry instead.
+ * Direct invocation is the implement workflow's failure handler (see
+ * agent-implement.yml); the review workflow wraps `reportFailure` from its
+ * own entry instead. The surface follows the work item: until the run's
+ * draft PR exists, failures report on the issue (retry: re-add
+ * `agent:implement`). Once it exists — the Open draft PR step exports
+ * IMPLEMENTED_PR_NUMBER — the issue-side retry is dead (preflight refuses
+ * issues already closed by an open PR), so the failure reports on the PR in
+ * the review workflow's failure shape: comment + `agent:blocked`, retry by
+ * re-adding `agent:review` (#19). This cannot race a live review: the only
+ * step after the review request is the best-effort cleanup, and if the
+ * request itself failed, its label never landed, so no review run started.
  */
 const invokedDirectly =
   process.argv[1] !== undefined &&
   fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 if (invokedDirectly) {
-  reportFailure({
-    subjectKind: "issue",
-    numberEnv: "ISSUE_NUMBER",
-    retryLabel: TRIGGER_LABEL,
-    workflowName: "implement workflow",
-  });
+  const implementedPrNumber = env("IMPLEMENTED_PR_NUMBER");
+  if (implementedPrNumber.length > 0) {
+    reportFailure({
+      subjectKind: "pr",
+      numberEnv: "IMPLEMENTED_PR_NUMBER",
+      retryLabel: REVIEW_TRIGGER_LABEL,
+      workflowName: "implement workflow",
+    });
+  } else {
+    reportFailure({
+      subjectKind: "issue",
+      numberEnv: "ISSUE_NUMBER",
+      retryLabel: TRIGGER_LABEL,
+      workflowName: "implement workflow",
+    });
+  }
 }

@@ -1,7 +1,10 @@
 name: Agent Review
 
 # Labeling a PR `agent:review` runs the review agent (pi CLI, ZAI provider via
-# env vars) grounded in the PR diff and review context. The agent emits a
+# env vars) grounded in the PR diff and review context. The label arrives on
+# its own in the happy path: the implement workflow applies it to the freshly
+# opened draft PR (#19); a maintainer re-adds it by hand only to retry a
+# blocked review. The agent emits a
 # structured payload; the workflow extracts it (unit-tested extraction, no
 # live LLM in tests), posts the findings as a regular PR review on the
 # maintainer's review surface, and marks the draft PR ready. Any failure posts
