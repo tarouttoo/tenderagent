@@ -72,9 +72,17 @@ jobs:
       # The trigger label is consumed by the run: retries re-add it (parent
       # issue decision), so a finished or blocked issue carries only the
       # lifecycle label. The mutation goes through the shared guarded path
-      # (assertOnlyAgentLabels) as the workflow token, never the PAT.
+      # (assertOnlyAgentLabels) as the workflow token, never the PAT. The
+      # step-level GH_TOKEN pin is load-bearing (#32): gh resolves its auth
+      # from the step's ambient environment, so the in-code
+      # WORKFLOW_GH_TOKEN override alone never reaches the gh subprocess and
+      # label mutations run as the job-level AGENT_PAT instead of the
+      # workflow token — issue-surface writes happen to pass today only
+      # because AGENT_PAT carries issue-label write. Same proven pattern as
+      # the failure reporter below.
       - name: Transition to in-progress
         env:
+          GH_TOKEN: ${{ github.token }}
           WORKFLOW_GH_TOKEN: ${{ github.token }}
         run: npx -y tsx@^4 .sandcastle/agent-workflows/shared/label-transition.ts --surface issue --number "$ISSUE_NUMBER" --transition start --trigger "agent:implement"
 
@@ -205,5 +213,8 @@ jobs:
       - name: Remove in-progress label
         if: always()
         env:
+          # Same #32 pin as the start transition above: gh reads the token
+          # from the step's env, not the in-code override.
+          GH_TOKEN: ${{ github.token }}
           WORKFLOW_GH_TOKEN: ${{ github.token }}
         run: npx -y tsx@^4 .sandcastle/agent-workflows/shared/label-transition.ts --surface issue --number "$ISSUE_NUMBER" --transition finish
