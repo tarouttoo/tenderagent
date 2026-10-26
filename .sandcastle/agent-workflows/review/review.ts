@@ -115,7 +115,7 @@ try {
   fs.writeFileSync(path.join(dir, "review-body.md"), formatReviewBody(review));
 
   console.log(
-    `Review payload extracted: verdict=${review.verdict}, findings=${review.findings.length}. Written to ${dir}.`,
+    `Review payload extracted: verdict=${review.verdict}, door=${review.door}, findings=${review.findings.length}. Written to ${dir}.`,
   );
 } catch (error) {
   fail(error instanceof Error ? error.message : String(error));
