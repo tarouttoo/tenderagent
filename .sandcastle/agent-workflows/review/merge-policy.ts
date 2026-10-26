@@ -1,20 +1,24 @@
 /**
- * The merge gate's decision module (spec #36, leaf #38): the repo-owned
- * merge policy as pure, unit-tested code. Structured inputs in — the two
- * agents' structured judgments (the review verdict and the reviewer's own
- * door assessment; the implementer's door declared in the PR body's Merge
- * Danger section) plus the objective facts the gate gathers (changed paths
- * and line count, sub-issue blockers, CI on the head commit, repo
- * auto-merge capability) — and one decision out, with every failed
- * condition enumerated so a held PR's single comment can list exactly what
- * failed. No network, no git, no live LLM: the review workflow's gate step
- * gathers the inputs and turns the outcome into lifecycle labels and the
- * hold comment; this module owns only the decision.
+ * The merge gate's pure, unit-tested surface (spec #36, leaf #38): the
+ * repo-owned merge policy as a decision, the parsing its inputs need
+ * (the door declared in the PR body, the sub-issue named by the closing
+ * keyword), and the hold comment that renders a hold decision. Structured
+ * inputs in — the two agents' structured judgments (the review verdict and
+ * the reviewer's own door assessment; the implementer's door declared in
+ * the PR body's Merge Danger section) plus the objective facts the gate
+ * gathers (changed paths and line count, sub-issue blockers, CI on the head
+ * commit, repo auto-merge capability) — and one decision out, with every
+ * failed condition enumerated so a held PR's single comment can list exactly
+ * what failed. No network, no git, no live LLM: the review workflow's gate
+ * step (the `merge-gate.ts` CLI entry) gathers the inputs and turns the
+ * outcome into lifecycle labels, the auto-merge request, and the hold
+ * comment; this module owns only the pure logic.
  *
  * The policy is a conjunction — every condition must hold for the outcome to
  * be a merge; any failure holds. Policy numbers live in `MERGE_POLICY`, so
  * tuning is an ordinary one-line reviewed diff.
  */
+import { assertOnlyAgentLabels } from "../shared/failure";
 import type { ReviewVerdict } from "./payload";
 
 /**
@@ -257,4 +261,75 @@ export const evaluateMergePolicy = (
   return failures.length === 0
     ? { outcome: "merge" }
     : { outcome: "hold", failures };
+};
+
+/**
+ * A line that closes an issue: GitHub's closing keywords (close/closes/
+ * closed, fix/fixes/fixed, resolve/resolves/resolved) before a same-repo
+ * `#N` reference. Cross-repo `owner/repo#N` is out of scope: sub-issues are
+ * same-repo by construction.
+ */
+const CLOSING_KEYWORD =
+  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi;
+
+/**
+ * The sub-issues a PR closes, parsed from the body's closing keywords —
+ * the gate checks each one's open blocked-by dependencies (story 8: the
+ * decision map's frontier never advances out of order). Deduped, in order
+ * of first mention; a missing or keyword-less body closes nothing.
+ */
+export const closingIssueNumbers = (
+  prBody: string | null | undefined,
+): number[] => {
+  if (prBody === null || prBody === undefined || prBody.trim().length === 0) {
+    return [];
+  }
+  const numbers: number[] = [];
+  for (const match of prBody.matchAll(CLOSING_KEYWORD)) {
+    const number = Number(match[1]);
+    if (!numbers.includes(number)) numbers.push(number);
+  }
+  return numbers;
+};
+
+/** Everything the hold comment needs; gathered by the gate CLI entry. */
+export interface HoldCommentInput {
+  prNumber: number;
+  /** Every failed condition, in policy order — one bullet each. */
+  failures: readonly FailedCondition[];
+  /** The workflow-run URL; empty renders the fallback line. */
+  runUrl: string;
+  /** The trigger label a retry re-adds (must be an agent:* lifecycle label). */
+  retryLabel: string;
+}
+
+/**
+ * The single comment a held PR gets (story 2): header, one bullet per failed
+ * condition — the stable id plus the reason the decision module wrote — the
+ * workflow-run link, and the retry convention (story 13: a held PR retries
+ * via the review trigger exactly like today) with story 14's promise that a
+ * held PR stays ready for review. The retry label is guarded: the gate never
+ * writes the human triage vocabulary.
+ */
+export const formatHoldComment = (input: HoldCommentInput): string => {
+  assertOnlyAgentLabels([input.retryLabel]);
+
+  const bullets = input.failures.map(
+    (failure) => `- \`${failure.condition}\`: ${failure.reason}`,
+  );
+
+  const runLine =
+    input.runUrl.length > 0
+      ? `[View workflow run](${input.runUrl})`
+      : "The workflow run link is unavailable; check the Actions tab.";
+
+  return [
+    `⏸️ **Merge gate held PR #${input.prNumber}** — the merge policy did not fully hold:`,
+    "",
+    ...bullets,
+    "",
+    runLine,
+    "",
+    `_Held PRs stay ready for review: merge by hand, or fix the failed conditions and retry by re-adding the \`${input.retryLabel}\` label._`,
+  ].join("\n");
 };

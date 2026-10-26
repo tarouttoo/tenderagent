@@ -10,7 +10,15 @@ name: Agent Review
 # maintainer's review surface, and marks the draft PR ready. Any failure posts
 # a reason comment with the workflow-run link and relabels the PR
 # `agent:blocked` — consistent with the implement workflow's failure path;
-# retrying means re-adding the trigger label.
+# retrying means re-adding the trigger label. After the review posts and the
+# PR flips ready, the merge gate (spec #36) runs as the workflow's final
+# deterministic step: it reconciles the two agents' structured judgments and
+# the objective facts (changed paths and lines, the sub-issue's blockers, CI
+# on the head commit, repo auto-merge capability) against the pure merge
+# policy. Every condition met: `agent:merge` plus a squash auto-merge
+# request. Anything else: `agent:hold` plus one comment enumerating exactly
+# what failed — held PRs stay ready for review (the maintainer's merge
+# queue) and retry via the review trigger like any other run.
 on:
   pull_request:
     types: [labeled]
@@ -125,6 +133,27 @@ jobs:
           else
             echo "PR is not a draft; ready-flip skipped (review already posted above)"
           fi
+
+      # The merge gate (spec #36, #39): the deterministic last step, after
+      # the review posts and the PR flips ready. Gathers the decision inputs
+      # (review payload, declared door, changed paths and lines, the
+      # sub-issue's open blockers, the latest CI run on the head commit, the
+      # repo's auto-merge capability) and executes the pure policy's outcome:
+      # merge -> `agent:merge` + squash auto-merge request; hold ->
+      # `agent:hold` + one comment enumerating every failed condition. Tokens
+      # are pinned at step level per #32: the gate's gh reads, merge request,
+      # and comment run as the workflow token (the job-level REVIEW_PAT may
+      # lack PR write), and its label mutations go through the shared guarded
+      # path under WORKFLOW_GH_TOKEN — a PAT never drives a merge or mutates
+      # lifecycle labels. A gate failure lands in the blocked path below,
+      # like any other step failure.
+      - name: Merge gate
+        if: steps.review.outputs.skipped != 'true'
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_GH_TOKEN: ${{ github.token }}
+        run: npx tsx .sandcastle/agent-workflows/review/merge-gate.ts
 
       # Failure handling: post the reason comment (with the run link) and
       # relabel the PR agent:blocked, removing the trigger label. Runs on

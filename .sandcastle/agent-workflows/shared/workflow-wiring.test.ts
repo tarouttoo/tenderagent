@@ -20,6 +20,9 @@ import { describe, expect, it } from "vitest";
 /** A label-transition step invokes the shared CLI entry by this script name. */
 const TRANSITION_ENTRY = "label-transition.ts";
 
+/** The merge gate step invokes the review workflow's gate CLI entry. */
+const GATE_ENTRY = "review/merge-gate.ts";
+
 /** The exact step-level env values the invariant demands. */
 const WORKFLOW_TOKEN_PIN = "${{ github.token }}";
 
@@ -48,6 +51,39 @@ const transitionSteps = (file: string): TransitionStep[] => {
     }
   }
   return steps;
+};
+
+/** A step invoking the gate entry, with its condition, env, and run string. */
+interface GateStep {
+  name: string;
+  ifCondition: string | undefined;
+  env: Record<string, string> | undefined;
+  run: string;
+}
+
+const gateSteps = (file: string): GateStep[] => {
+  const doc = workflow(file);
+  const steps: GateStep[] = [];
+  for (const job of Object.values(doc.jobs ?? {}) as any[]) {
+    for (const step of job.steps ?? []) {
+      if (typeof step.run === "string" && step.run.includes(GATE_ENTRY)) {
+        steps.push({
+          name: step.name,
+          ifCondition: step.if,
+          env: step.env,
+          run: step.run,
+        });
+      }
+    }
+  }
+  return steps;
+};
+
+/** Names of every step in the file's first job, in file order. */
+const stepNames = (file: string): string[] => {
+  const doc = workflow(file);
+  const [job] = Object.values(doc.jobs ?? {}) as any[];
+  return (job.steps ?? []).map((step: any) => step.name);
 };
 
 describe("lifecycle label-mutation wiring", () => {
@@ -79,4 +115,52 @@ describe("lifecycle label-mutation wiring", () => {
       });
     });
   }
+});
+
+describe("merge gate wiring (#39)", () => {
+  const reviewSteps = () => gateSteps("agent-review.yml");
+
+  it("runs the gate on exactly one step of the review workflow", () => {
+    expect(reviewSteps().map((step) => step.name)).toEqual(["Merge gate"]);
+  });
+
+  it("is the review workflow's final happy-path step: after the review posts and the PR flips ready", () => {
+    const names = stepNames("agent-review.yml");
+    const gate = names.indexOf("Merge gate");
+    expect(gate).toBeGreaterThan(-1);
+    expect(gate).toBeGreaterThan(names.indexOf("Post review findings"));
+    expect(gate).toBeGreaterThan(names.indexOf("Mark PR ready"));
+    // And before the failure path, which only runs on !success().
+    expect(gate).toBeLessThan(
+      names.indexOf("Checkout for failure reporter"),
+    );
+  });
+
+  it("skips when the review step skipped (closed PRs get no gate verdict either)", () => {
+    for (const step of reviewSteps()) {
+      expect(step.ifCondition).toBe("steps.review.outputs.skipped != 'true'");
+    }
+  });
+
+  it("pins GH_TOKEN at step level — the gate's gh reads, merge request, and comment run as the workflow token, never the job-level PAT", () => {
+    for (const step of reviewSteps()) {
+      expect(step.env?.GH_TOKEN).toBe(WORKFLOW_TOKEN_PIN);
+    }
+  });
+
+  it("keeps WORKFLOW_GH_TOKEN beside the pin — the gate's label mutations go through the guarded path", () => {
+    for (const step of reviewSteps()) {
+      expect(step.env?.WORKFLOW_GH_TOKEN).toBe(WORKFLOW_TOKEN_PIN);
+    }
+  });
+
+  it("passes OUTPUT_DIR — the gate reads review-payload.json written by the review step", () => {
+    for (const step of reviewSteps()) {
+      expect(step.env?.OUTPUT_DIR).toBeDefined();
+    }
+  });
+
+  it("leaves the implement workflow alone — the gate is the review workflow's final step only", () => {
+    expect(gateSteps("agent-implement.yml")).toEqual([]);
+  });
 });
