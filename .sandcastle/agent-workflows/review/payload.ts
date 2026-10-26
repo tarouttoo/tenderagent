@@ -11,6 +11,10 @@ import { z } from "zod";
 export const REVIEW_SEVERITIES = ["blocker", "concern", "nit"] as const;
 export type ReviewSeverity = (typeof REVIEW_SEVERITIES)[number];
 
+/** How reversible the change is — the door, in the reviewer's vocabulary. */
+export const REVIEW_DOORS = ["one_way", "two_way"] as const;
+export type ReviewDoor = (typeof REVIEW_DOORS)[number];
+
 /** The review agent's overall call. */
 export const REVIEW_VERDICTS = ["approve", "comment", "request_changes"] as const;
 export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
@@ -26,6 +30,12 @@ export const reviewFindingSchema = z.object({
 
 export const reviewPayloadSchema = z.object({
   verdict: z.enum(REVIEW_VERDICTS),
+  /**
+   * The reviewer's own door assessment, asserted from the diff — not copied
+   * from the PR body's Merge Danger declaration, which the merge gate
+   * cross-checks this field against.
+   */
+  door: z.enum(REVIEW_DOORS),
   summary: z.string().min(1),
   findings: z.array(reviewFindingSchema),
 });
@@ -155,6 +165,11 @@ const SEVERITY_LABEL: Record<ReviewSeverity, string> = {
   nit: "⚪ nit",
 };
 
+const DOOR_LABEL: Record<ReviewDoor, string> = {
+  one_way: "🚪 one-way door (hard to undo)",
+  two_way: "🔁 two-way door (a revert undoes it)",
+};
+
 const findingLocation = (finding: ReviewFinding): string => {
   if (finding.file === undefined) return "";
   return finding.line === undefined
@@ -171,6 +186,7 @@ export const formatReviewBody = (payload: ReviewPayload): string => {
 
   return [
     `## 🤖 Agent review — ${VERDICT_LABEL[payload.verdict]}`,
+    `**Door assessment**: ${DOOR_LABEL[payload.door]}`,
     "",
     payload.summary,
     "",

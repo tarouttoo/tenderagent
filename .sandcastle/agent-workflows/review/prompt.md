@@ -45,6 +45,7 @@ review payload the workflow parses:
 ```json
 {
   "verdict": "approve" | "comment" | "request_changes",
+  "door": "one_way" | "two_way",
   "summary": "One short paragraph: what the change does and your overall assessment.",
   "findings": [
     {
@@ -59,6 +60,13 @@ review payload the workflow parses:
 
 - `verdict` is `approve` when there are no blockers, `request_changes` when a
   blocker must be fixed before merge, `comment` otherwise.
+- `door` is your own door assessment — how reversible the change is once
+  merged: `two_way` when a revert cleanly undoes it (docs, tests, additive
+  code), `one_way` when it is hard to undo (deleted files or data, breaking
+  schema or API changes, edits to workflow definitions or the agent harness).
+  Assert it from the diff itself; do not copy the PR body's Merge Danger
+  declaration — the merge gate cross-checks the two, and a disagreement
+  matters more than agreement.
 - `severity` is `blocker` (must be fixed), `concern` (should be discussed), or
   `nit` (optional polish).
 - `file` and `line` are optional but strongly recommended for every finding;

@@ -5,10 +5,12 @@ import {
   reviewEventFor,
   reviewPayloadSchema,
   reviewPostPlan,
+  REVIEW_DOORS,
 } from "./payload";
 
 const payload = {
   verdict: "comment",
+  door: "two_way",
   summary: "Solid implementation; two small concerns.",
   findings: [
     {
@@ -30,6 +32,7 @@ describe("reviewPayloadSchema", () => {
     expect(() =>
       reviewPayloadSchema.parse({
         verdict: "approve",
+        door: "two_way",
         summary: "Looks clean.",
         findings: [],
       }),
@@ -40,6 +43,16 @@ describe("reviewPayloadSchema", () => {
     expect(() =>
       reviewPayloadSchema.parse({ ...payload, verdict: "lgtm" }),
     ).toThrow();
+  });
+
+  it("rejects a missing door", () => {
+    const { door, ...withoutDoor } = payload;
+
+    expect(() => reviewPayloadSchema.parse(withoutDoor)).toThrow();
+  });
+
+  it("rejects an unknown door", () => {
+    expect(() => reviewPayloadSchema.parse({ ...payload, door: "maybe" })).toThrow();
   });
 
   it("rejects an unknown severity", () => {
@@ -141,6 +154,12 @@ describe("extractReviewPayload", () => {
   });
 });
 
+describe("REVIEW_DOORS", () => {
+  it("spells the two door values the merge gate understands", () => {
+    expect(REVIEW_DOORS).toEqual(["one_way", "two_way"]);
+  });
+});
+
 describe("reviewEventFor", () => {
   it("maps approve → the --approve flag", () => {
     expect(reviewEventFor("approve")).toBe("--approve");
@@ -185,6 +204,7 @@ describe("formatReviewBody", () => {
   it("renders the verdict, summary, and located findings", () => {
     const body = formatReviewBody({
       verdict: "request_changes",
+      door: "one_way",
       summary: "One blocker must be fixed.",
       findings: [
         {
@@ -199,6 +219,7 @@ describe("formatReviewBody", () => {
 
     expect(body).toMatch(/request changes/i);
     expect(body).toContain("One blocker must be fixed.");
+    expect(body).toMatch(/one-way door/i);
     expect(body).toContain("src/main.ts:7");
     expect(body).toContain("Unhandled promise rejection.");
     expect(body).toContain("Typo in the doc comment.");
@@ -207,6 +228,7 @@ describe("formatReviewBody", () => {
   it("states when there are no findings", () => {
     const body = formatReviewBody({
       verdict: "approve",
+      door: "two_way",
       summary: "Clean.",
       findings: [],
     });
@@ -214,9 +236,28 @@ describe("formatReviewBody", () => {
     expect(body).toMatch(/no findings/i);
   });
 
+  it("renders the reviewer's door assessment", () => {
+    const twoWay = formatReviewBody({
+      verdict: "approve",
+      door: "two_way",
+      summary: "s",
+      findings: [],
+    });
+    const oneWay = formatReviewBody({
+      verdict: "comment",
+      door: "one_way",
+      summary: "s",
+      findings: [],
+    });
+
+    expect(twoWay).toMatch(/two-way door/i);
+    expect(oneWay).toMatch(/one-way door/i);
+  });
+
   it("renders a finding without a file without dangling punctuation", () => {
     const body = formatReviewBody({
       verdict: "comment",
+      door: "two_way",
       summary: "s",
       findings: [{ severity: "nit", note: "Consider renaming." }],
     });

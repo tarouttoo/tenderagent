@@ -60,7 +60,7 @@ describe("the checked-in review prompt skeleton", () => {
     const prompt = renderPrompt(template, buildReviewPromptArgs(input));
 
     expect(prompt).toContain("```json");
-    for (const word of ["verdict", "summary", "findings", "severity"]) {
+    for (const word of ["verdict", "door", "summary", "findings", "severity"]) {
       expect(prompt).toContain(word);
     }
     for (const verdict of ["approve", "comment", "request_changes"]) {
@@ -69,6 +69,17 @@ describe("the checked-in review prompt skeleton", () => {
     for (const severity of ["blocker", "concern", "nit"]) {
       expect(prompt).toContain(severity);
     }
+    for (const door of ["one_way", "two_way"]) {
+      expect(prompt).toContain(door);
+    }
+  });
+
+  it("asks for the reviewer's own door assessment, not a copy of the PR body", () => {
+    const prompt = renderPrompt(template, buildReviewPromptArgs(input));
+
+    expect(prompt).toMatch(/door/);
+    expect(prompt).toMatch(/your own/i);
+    expect(prompt).toMatch(/merge danger/i);
   });
 
   it("keeps the review read-only", () => {
