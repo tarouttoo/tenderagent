@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   MERGE_POLICY,
+  closingIssueNumbers,
   evaluateMergePolicy,
+  formatHoldComment,
   parseDeclaredDoor,
   type MergeCondition,
   type MergeDecision,
@@ -35,6 +37,95 @@ const expectHoldWith = (
     conditions,
   );
 };
+
+describe("closingIssueNumbers", () => {
+  it("parses the pr-skill first line (Closes #N)", () => {
+    expect(closingIssueNumbers("Closes #39\n\n## Summary\n\n…")).toEqual([39]);
+  });
+
+  it("collects every closing-keyword reference, not just the first", () => {
+    expect(closingIssueNumbers("Fixes #1 and closes #2, resolves #3.")).toEqual(
+      [1, 2, 3],
+    );
+  });
+
+  it("ignores references without a closing keyword", () => {
+    expect(closingIssueNumbers("Refs #5. Part of #6. Related to #7.")).toEqual(
+      [],
+    );
+  });
+
+  it("dedupes repeated references to the same issue", () => {
+    expect(closingIssueNumbers("Closes #4 (fixes #4)")).toEqual([4]);
+  });
+
+  it("is case-insensitive", () => {
+    expect(closingIssueNumbers("FIXES #7")).toEqual([7]);
+  });
+
+  it("treats a missing body as no closing keyword", () => {
+    for (const body of [null, undefined, ""]) {
+      expect(closingIssueNumbers(body)).toEqual([]);
+    }
+  });
+});
+
+describe("formatHoldComment", () => {
+  const heldInput = {
+    prNumber: 12,
+    failures: [
+      {
+        condition: "ci_green" as const,
+        reason: "CI is not green on the PR's head commit.",
+      },
+      {
+        condition: "verdict" as const,
+        reason: "Review verdict is `comment`, not `approve`.",
+      },
+    ],
+    runUrl: "https://github.com/tarouttoo/tenderagent/actions/runs/987654321",
+    retryLabel: "agent:review",
+  };
+
+  it("names the PR as held in the header", () => {
+    expect(formatHoldComment(heldInput)).toContain("PR #12");
+  });
+
+  it("enumerates every failed condition as its own bullet, in order", () => {
+    const body = formatHoldComment(heldInput);
+    const bullets = body
+      .split("\n")
+      .filter((line) => line.startsWith("- "));
+    expect(bullets).toEqual([
+      "- `ci_green`: CI is not green on the PR's head commit.",
+      "- `verdict`: Review verdict is `comment`, not `approve`.",
+    ]);
+  });
+
+  it("links the workflow run", () => {
+    expect(formatHoldComment(heldInput)).toContain(
+      "[View workflow run](https://github.com/tarouttoo/tenderagent/actions/runs/987654321)",
+    );
+  });
+
+  it("keeps the held PR ready-for-review and names the retry path", () => {
+    const body = formatHoldComment(heldInput);
+    expect(body).toContain("ready for review");
+    expect(body).toContain("agent:review");
+  });
+
+  it("falls back to a legible line when the run URL is unavailable", () => {
+    const body = formatHoldComment({ ...heldInput, runUrl: "" });
+    expect(body).not.toContain("[View workflow run]");
+    expect(body).toContain("workflow run");
+  });
+
+  it("never writes a non-agent retry label (the triage vocabulary is human-only)", () => {
+    expect(() =>
+      formatHoldComment({ ...heldInput, retryLabel: "ready-for-agent" }),
+    ).toThrow(/automation only writes agent:/i);
+  });
+});
 
 describe("MERGE_POLICY", () => {
   it("caps changed lines at 300 (the spec's ceiling; tuning is a reviewed diff)", () => {

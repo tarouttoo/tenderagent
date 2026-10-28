@@ -3,6 +3,8 @@ import {
   assertOnlyAgentLabels,
   blockedLabelOps,
   formatBlockedComment,
+  HOLD_LABEL,
+  MERGE_LABEL,
 } from "./failure";
 
 describe("assertOnlyAgentLabels", () => {
@@ -118,5 +120,16 @@ describe("formatBlockedComment", () => {
     const comment = formatBlockedComment({ ...issueInput, runUrl: "" });
     expect(comment).toMatch(/workflow run link is unavailable/i);
     expect(comment).not.toContain("()");
+  });
+});
+
+describe("merge gate lifecycle labels (spec #36)", () => {
+  it("spells the two new lifecycle labels exactly", () => {
+    expect(MERGE_LABEL).toBe("agent:merge");
+    expect(HOLD_LABEL).toBe("agent:hold");
+  });
+
+  it("keeps both inside the agent:* invariant", () => {
+    expect(() => assertOnlyAgentLabels([MERGE_LABEL, HOLD_LABEL])).not.toThrow();
   });
 });

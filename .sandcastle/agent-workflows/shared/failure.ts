@@ -14,6 +14,9 @@ export const TRIGGER_LABEL = "agent:implement";
 export const REVIEW_TRIGGER_LABEL = "agent:review";
 export const IN_PROGRESS_LABEL = "agent:in-progress";
 export const BLOCKED_LABEL = "agent:blocked";
+/** The merge gate's two outcome labels (spec #36): auto-merge eligible vs held for a human. */
+export const MERGE_LABEL = "agent:merge";
+export const HOLD_LABEL = "agent:hold";
 
 /**
  * Guard the label invariant: every label automation writes must be an
