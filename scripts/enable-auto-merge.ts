@@ -37,8 +37,10 @@
  *
  * Requires `gh` authenticated as someone with admin on the repo (branch
  * protection is admin-readable). Exit code 0 only when every required check
- * verified; exit code 2 on usage/setup problems (repo unresolvable, gh
- * unreadable) — the wizard never got to the checks.
+ * ran and verified — a skipped required check (e.g. no AGENT_PAT supplied)
+ * exits 1 like a failed one, since a skipped check is not a verified one;
+ * exit code 2 on usage/setup problems (repo unresolvable, gh unreadable) —
+ * the wizard never got to the checks.
  */
 import { execFileSync } from "node:child_process";
 import * as path from "node:path";
@@ -297,6 +299,39 @@ export const tokenVerdict = (
   );
 };
 
+/**
+ * One wizard run's verdict from the step verdicts plus the skips: exit 0
+ * only when every required check ran and verified. A skipped required check
+ * (e.g. no AGENT_PAT supplied) never ran, so it fails the run like a failed
+ * check would — a skipped check is not a verified one. Optional skips are
+ * named in the verdict, not hidden.
+ */
+export const runVerdict = (
+  results: readonly CheckResult[],
+  skipped: readonly { note: string; required: boolean }[],
+): CheckResult => {
+  const failed = results.filter((entry) => !entry.ok).length;
+  const skippedRequired = skipped.filter((entry) => entry.required).length;
+  const optional = skipped.length - skippedRequired;
+  if (failed > 0) {
+    return bad(
+      `${failed} required check(s) did not verify`,
+      "Apply the FIX lines above, then re-run the wizard (it is idempotent).",
+    );
+  }
+  if (skippedRequired > 0) {
+    return bad(
+      `${skippedRequired} required check(s) were skipped without running — a skipped check is not a verified one`,
+      "Provide the missing token (--agent-pat, AGENT_PAT, or paste it when prompted), then re-run the wizard to complete enablement.",
+    );
+  }
+  return ok(
+    optional > 0
+      ? `all required checks verified (${optional} optional step(s) skipped — see ⏭️ above)`
+      : "every required check ran and verified",
+  );
+};
+
 // ─── Everything below is the interactive walk; the verdicts above are the
 // ─── unit-tested decision surface. No call in this section writes anything:
 // ─── the wizard reads state and guides the human who flips the settings.
@@ -352,6 +387,15 @@ const openBrowser = (url: string): boolean => {
 
 const interactive = (): boolean => stdin.isTTY === true;
 
+/**
+ * Strip trailing line terminators from a pasted chunk: a clipboard paste
+ * can arrive as one chunk with the Enter already in it, and an embedded
+ * \r would yield a token the API rejects with a "check the token's value"
+ * fix.
+ */
+export const sanitizeSecretChunk = (chunk: string): string =>
+  chunk.replace(/[\r\n]+$/, "");
+
 const confirm = async (prompt: string): Promise<string> => {
   const rl = readline.createInterface({ input: stdin, output: stdout });
   const answer = await rl.question(prompt);
@@ -384,7 +428,7 @@ const readSecret = (prompt: string): Promise<string> =>
       } else if (key === "\u007f" || key === "\b") {
         secret = secret.slice(0, -1);
       } else if (key >= " ") {
-        secret += key;
+        secret += sanitizeSecretChunk(key);
       }
     };
     const cleanup = (): void => {
@@ -479,9 +523,20 @@ const probeToken = (token: string, repo: string): TokenProbe => {
     kind: "fine-grained",
     login: parsed.login,
     repoPermission: permission.ok
-      ? ((JSON.parse(permission.stdout).permission as string | undefined) ?? null)
+      ? parseRepoPermission(permission.stdout)
       : null,
   };
+};
+
+/** The aggregated repo role from the collaborators endpoint's JSON; null
+ * when the response is not parseable (the verdict says "unreadable"
+ * legibly instead of throwing a raw SyntaxError). */
+export const parseRepoPermission = (stdout: string): string | null => {
+  try {
+    return (JSON.parse(stdout).permission as string | undefined) ?? null;
+  } catch {
+    return null;
+  }
 };
 
 /** One bot-token step: probe via the API, then the gaps-and-fixes verdict. */
@@ -600,7 +655,7 @@ const main = async (): Promise<void> => {
   }
 
   const results: { name: string; verdict: CheckResult }[] = [];
-  const skipped: string[] = [];
+  const skipped: { note: string; required: boolean }[] = [];
 
   // ── Step 1: repo auto-merge (the activation switch).
   const repoJson = ghApi([`repos/${repo}`]);
@@ -652,7 +707,10 @@ const main = async (): Promise<void> => {
       ? "declined — the merge gate verifies CI on the head commit itself"
       : "non-interactive session — the merge gate verifies CI on the head commit itself";
     console.log(`\n⏭️  Branch protection skipped (${note}).`);
-    skipped.push(`Branch protection with CI required — ${note}`);
+    skipped.push({
+      note: `Branch protection with CI required — ${note}`,
+      required: false,
+    });
   } else {
     results.push({
       name: "Branch protection (CI required)",
@@ -703,7 +761,7 @@ const main = async (): Promise<void> => {
   } else {
     const note = "no token provided — pass --agent-pat, set AGENT_PAT, or paste it when prompted";
     console.log(`\n⏭️  AGENT_PAT check skipped (${note}).`);
-    skipped.push(`AGENT_PAT scopes — ${note}`);
+    skipped.push({ note: `AGENT_PAT scopes — ${note}`, required: true });
   }
 
   const reviewToken =
@@ -728,22 +786,24 @@ const main = async (): Promise<void> => {
     const note =
       "optional token, not provided — without it the review verdict posts as a PR comment instead of a formal review";
     console.log(`\n⏭️  REVIEW_PAT check skipped (${note}).`);
-    skipped.push(`REVIEW_PAT scopes — ${note}`);
+    skipped.push({
+      note: `REVIEW_PAT scopes — ${note}`,
+      required: false,
+    });
   }
 
   // ── Summary and exit.
   console.log("\n════ Summary ════");
-  for (const note of skipped) console.log(`⏭️  ${note}`);
-  const failed = results.filter((entry) => !entry.verdict.ok);
+  for (const { note } of skipped) console.log(`⏭️  ${note}`);
   for (const entry of results) printResult(entry.name, entry.verdict);
-  if (failed.length > 0) {
-    console.log(
-      `\n${failed.length} required check(s) did not verify — apply the FIX lines above and re-run the wizard (it is idempotent).`,
-    );
-    exit(1);
-  }
+  const verdict = runVerdict(
+    results.map((entry) => entry.verdict),
+    skipped,
+  );
+  printResult("Run verdict", verdict);
+  if (!verdict.ok) exit(1);
   console.log(
-    "\nAll steps verified. The merge gate can request a squash auto-merge for two-way-door PRs that pass every policy condition; anything else queues under the agent:hold label for you.",
+    "\nThe merge gate can request a squash auto-merge for two-way-door PRs that pass every policy condition; anything else queues under the agent:hold label for you.",
   );
   exit(0);
 };

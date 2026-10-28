@@ -9,7 +9,7 @@
  * itself never performs a settings write — the trust act stays human
  * (ADR 0001).
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -18,11 +18,15 @@ import {
   TOKEN_SETTINGS_URL,
   autoMergeVerdict,
   branchProtectionUrl,
+  parseRepoPermission,
   parseUserProbe,
   repoSettingsUrl,
   requiredCheckVerdict,
+  runVerdict,
+  sanitizeSecretChunk,
   tokenVerdict,
 } from "./enable-auto-merge.js";
+import type { CheckResult } from "./enable-auto-merge.js";
 
 describe("repo auto-merge verdict", () => {
   it("passes when the API reports allow_auto_merge true", () => {
@@ -98,12 +102,6 @@ describe("required status check verdict (optional branch protection)", () => {
 
     expect(verdict.ok).toBe(false);
     expect(verdict.fix).toContain(CI_CHECK_NAME);
-  });
-
-  it("checks the name the merge gate itself looks for", () => {
-    // The gate (merge-gate.ts) queries the workflow named "CI"; a required
-    // check under any other name would not be the one it verifies.
-    expect(CI_CHECK_NAME).toBe("CI");
   });
 });
 
@@ -216,6 +214,48 @@ describe("bot token verdicts", () => {
   });
 });
 
+describe("run verdict (the exit contract)", () => {
+  const pass: CheckResult = { ok: true, detail: "enabled" };
+  const fail: CheckResult = { ok: false, detail: "dark", fix: "flip it" };
+
+  it("passes only when every required check ran and verified", () => {
+    const verdict = runVerdict([pass, pass], []);
+
+    expect(verdict.ok).toBe(true);
+    expect(verdict.detail).toContain("every required check");
+  });
+
+  it("fails when a check ran and failed", () => {
+    expect(runVerdict([pass, fail], []).ok).toBe(false);
+  });
+
+  it("fails when a required check was skipped without running — exit 0 never overstates", () => {
+    // A skipped AGENT_PAT check never ran, so the run is not green: an
+    // operator must not be able to declare enablement with unverified
+    // token scopes.
+    const verdict = runVerdict([pass], [
+      { note: "AGENT_PAT scopes — no token provided", required: true },
+    ]);
+
+    expect(verdict.ok).toBe(false);
+    expect(verdict.detail).toContain("skipped");
+    expect(verdict.fix).toContain("--agent-pat");
+  });
+
+  it("passes with optional skips, naming them instead of hiding them", () => {
+    const verdict = runVerdict([pass], [
+      {
+        note: "REVIEW_PAT scopes — optional token, not provided",
+        required: false,
+      },
+    ]);
+
+    expect(verdict.ok).toBe(true);
+    expect(verdict.detail).toContain("optional");
+    expect(verdict.detail).toContain("skipped");
+  });
+});
+
 describe("token probe parsing", () => {
   // What `gh api user --include` actually prints: CRLF response headers,
   // a blank line, then the JSON body — found live on the first wizard run.
@@ -241,6 +281,25 @@ describe("token probe parsing", () => {
       login: "tenderagent-bot",
     });
   });
+
+  it("degrades a non-JSON collaborators response to an unreadable role, not a throw", () => {
+    expect(parseRepoPermission("<html>rate limited</html>")).toBeNull();
+    expect(parseRepoPermission(JSON.stringify({ permission: "admin" }))).toBe(
+      "admin",
+    );
+    expect(parseRepoPermission(JSON.stringify({}))).toBeNull();
+  });
+});
+
+describe("secret input chunks", () => {
+  it("strips a trailing Enter that arrives inside one paste chunk", () => {
+    // A clipboard paste can land as a single chunk with the Enter already
+    // in it; an embedded \r would yield a token the API rejects with
+    // "check the token's value".
+    expect(sanitizeSecretChunk("ghp_tokens\r")).toBe("ghp_tokens");
+    expect(sanitizeSecretChunk("ghp_tokens\r\n")).toBe("ghp_tokens");
+    expect(sanitizeSecretChunk("ghp_tokens")).toBe("ghp_tokens");
+  });
 });
 
 describe("the wizard's own surface", () => {
@@ -260,10 +319,33 @@ describe("the wizard's own surface", () => {
 
   it("never performs a settings write — the trust act stays human (ADR 0001)", () => {
     // The wizard guides and verifies only: an agent could run a PATCH/PUT
-    // against the settings endpoints, and the feature exists precisely
-    // because the enablement is the one step automation never takes.
-    expect(source).not.toMatch(/--method[ \t]+(PATCH|PUT|POST|DELETE)/);
-    expect(source).not.toMatch(/--request[ \t]+(PATCH|PUT|POST|DELETE)/);
+    // against the settings endpoints (long, short, or equals form), and
+    // the feature exists precisely because the enablement is the one step
+    // automation never takes.
+    expect(source).not.toMatch(/--method[ \t=]+(PATCH|PUT|POST|DELETE)/);
+    expect(source).not.toMatch(/--request[ \t=]+(PATCH|PUT|POST|DELETE)/);
+    expect(source).not.toMatch(/(^|[^-\w])-X[ \t]+(PATCH|PUT|POST|DELETE)/);
+  });
+
+  it("cites an ADR that exists — the trust-act rationale is readable in-repo", () => {
+    expect(runbook).toMatch(/\.\.\/adr\/0001-/);
+    const adrDir = path.join(scriptDir, "../docs/adr");
+    expect(
+      readdirSync(adrDir).some((file) => /^0001-.*\.md$/.test(file)),
+    ).toBe(true);
+  });
+
+  it("cross-checks CI_CHECK_NAME against the merge gate's own workflow name", () => {
+    // The gate declares its workflow name once; reading it out of the gate
+    // source enforces wizard↔gate consistency instead of commenting it.
+    const gate = readFileSync(
+      path.join(
+        scriptDir,
+        "../.sandcastle/agent-workflows/review/merge-gate.ts",
+      ),
+      "utf8",
+    );
+    expect(gate).toContain(`const CI_WORKFLOW_NAME = "${CI_CHECK_NAME}";`);
   });
 
   it("names the exact settings pages it walks", () => {

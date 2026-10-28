@@ -26,6 +26,10 @@ _Avoid_: status labels, workflow tags
 The automation that translates a human triage decision into the machine lifecycle — the piece that turns `ready-for-agent` into `agent:implement`.
 _Avoid_: trigger, relay
 
+**Trust act**:
+The human-only flip of a repo trust setting — auto-merge, branch protection, token scopes — that automation guides and verifies but never performs (ADR 0001); the flip is the merge gate's activation switch and kill switch.
+_Avoid_: settings change, auto-enablement
+
 **Completion signal**:
 The exact marker (`<promise>COMPLETE</promise>`) an AFK agent emits when it considers its task done; the orchestrator scans the agent's output for it and ends the run early instead of burning the iteration limit.
 _Avoid_: stop word, sentinel token

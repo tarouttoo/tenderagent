@@ -113,7 +113,7 @@ The workflows' cleanup steps run with `if: always()` and cover normal failure an
 
 ## Activation: the enablement wizard
 
-The merge gate is dark until repo auto-merge is enabled — the settings flip is the feature's activation switch and kill switch, and it is the one step automation never takes: flipping the setting is the human-only trust act (ADR 0001). The wizard at [scripts/enable-auto-merge.ts](../../scripts/enable-auto-merge.ts) walks it: it opens the exact settings page, waits, and verifies the captured state via the API before moving on; it optionally walks adding branch protection with the CI check required (verifying via the API too); and it checks the bot token scopes the gate relies on — Workflows read/write and Pull requests write — naming any gap and its fix. Re-running it on a fully enabled repo completes without changes (idempotent).
+The merge gate is dark until repo auto-merge is enabled — the settings flip is the feature's activation switch and kill switch, and it is the one step automation never takes: flipping the setting is the human-only trust act ([ADR 0001](../adr/0001-trust-settings-are-flipped-by-humans.md)). The wizard at [scripts/enable-auto-merge.ts](../../scripts/enable-auto-merge.ts) walks it: it opens the exact settings page, waits, and verifies the captured state via the API before moving on; it optionally walks adding branch protection with the CI check required (verifying via the API too); and it checks the bot token scopes the gate relies on — Workflows read/write and Pull requests write — naming any gap and its fix. Re-running it on a fully enabled repo completes without changes (idempotent).
 
 ```bash
 npx tsx scripts/enable-auto-merge.ts        # guided session; gh authed with admin on the repo
