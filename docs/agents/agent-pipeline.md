@@ -111,6 +111,16 @@ The workflows' cleanup steps run with `if: always()` and cover normal failure an
 - **Detection**: an `agent:in-progress` label whose workflow run is not actually running.
 - **Recovery**: remove the stale `agent:in-progress` and re-add the trigger label to retry. No branch cleanup is needed as long as nothing else wrote to the branch — the retry pushes the same deterministic branch name under a lease; if a concurrent writer did land newer commits there, the push refuses and the lease recipe above applies.
 
+## Activation: the enablement wizard
+
+The merge gate is dark until repo auto-merge is enabled — the settings flip is the feature's activation switch and kill switch, and it is the one step automation never takes: flipping the setting is the human-only trust act ([ADR 0001](../adr/0001-trust-settings-are-flipped-by-humans.md)). The wizard at [scripts/enable-auto-merge.ts](../../scripts/enable-auto-merge.ts) walks it: it opens the exact settings page, waits, and verifies the captured state via the API before moving on; it optionally walks adding branch protection with the CI check required (verifying via the API too); and it checks the bot token scopes the gate relies on — Workflows read/write and Pull requests write — naming any gap and its fix. Re-running it on a fully enabled repo completes without changes (idempotent).
+
+```bash
+npx tsx scripts/enable-auto-merge.ts        # guided session; gh authed with admin on the repo
+```
+
+Branch protection is optional and defaults to skipped — the gate verifies CI on the head commit itself; protection only makes GitHub enforce it server-side. Run the wizard before the merge case of the manual smoke test below; record the enablement under *Live validations* when it verifies green.
+
 ## Manual smoke test
 
 Validate the whole chain on a staging issue before trusting the pipeline, and re-run it after touching any workflow or orchestration script. Requires a `gh` authenticated against this repo.

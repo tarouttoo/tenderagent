@@ -12,5 +12,5 @@
     "noUncheckedIndexedAccess": true,
     "noEmit": true
   },
-  "include": ["src", ".sandcastle", "vitest.config.ts"]
+  "include": ["src", ".sandcastle", "scripts", "vitest.config.ts"]
 }
