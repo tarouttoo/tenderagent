@@ -29,9 +29,10 @@ import { gh, outputDir } from "../shared/cli";
 import {
   HOLD_LABEL,
   MERGE_LABEL,
+  mergeGateLabelOps,
   REVIEW_TRIGGER_LABEL,
 } from "../shared/failure";
-import { applyLabelOps, labelOps } from "../shared/labels";
+import { applyLabelOps } from "../shared/labels";
 import {
   closingIssueNumbers,
   evaluateMergePolicy,
@@ -130,10 +131,12 @@ try {
   if (decision.outcome === "merge") {
     // The label is created best-effort first (gh silently no-ops a label the
     // repo lacks) and applied through the guarded path as the workflow token.
+    // The transition also clears a stale `agent:hold` from an earlier hold, so
+    // a passing retry never carries both outcomes.
     applyLabelOps({
       surface: "pr",
       subjectNumber: prNumber,
-      ops: labelOps([], [MERGE_LABEL]),
+      ops: mergeGateLabelOps("merge"),
       ensureLabels: true,
     });
     // Story 15: merges are squash merges. --auto queues the request; GitHub
@@ -174,7 +177,7 @@ try {
     applyLabelOps({
       surface: "pr",
       subjectNumber: prNumber,
-      ops: labelOps([], [HOLD_LABEL]),
+      ops: mergeGateLabelOps("hold"),
       ensureLabels: true,
     });
     gh(["pr", "comment", prNumber, "--body-file", commentPath]);
