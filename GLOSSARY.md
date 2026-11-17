@@ -1,6 +1,6 @@
 # Tenderagent
 
-Label-driven agent automation for the tender pipeline: humans triage, AFK agents implement and review, humans merge.
+Label-driven agent automation for the tender pipeline: humans triage, AFK agents implement and review, and the merge gate either merges or holds for a human.
 
 ## Language
 
@@ -19,7 +19,7 @@ The human act of deciding which issues are ready, and for whom — owned by peop
 _Avoid_: grooming, prioritization
 
 **Lifecycle labels**:
-The `agent:*` labels (`agent:implement`, `agent:in-progress`, `agent:review`, `agent:blocked`) that mark where an issue or PR sits in the agent pipeline; written by automation — a maintainer only re-adds trigger labels on retry — and kept separate from the human triage vocabulary, which automation never writes.
+The `agent:*` labels (`agent:implement`, `agent:in-progress`, `agent:review`, `agent:merge`, `agent:hold`, `agent:blocked`) that mark where an issue or PR sits in the agent pipeline; written by automation — a maintainer only re-adds trigger labels on retry — and kept separate from the human triage vocabulary, which automation never writes.
 _Avoid_: status labels, workflow tags
 
 **Bridge**:
@@ -33,3 +33,19 @@ _Avoid_: stop word, sentinel token
 **Staging issue**:
 A disposable leaf issue created only to exercise the pipeline end to end; never merged, its branch and draft PR cleaned up afterwards.
 _Avoid_: test issue, canary
+
+**Merge gate**:
+The deterministic step after review that applies the merge policy to a PR and either merges it or holds it; its judgment is code, never an agent's live call.
+_Avoid_: merge bot, auto-approver
+
+**Merge policy**:
+The repo-owned rules a PR must satisfy to merge without a human: approved verdict, confirmed two-way door, no denied paths, diff under the ceiling, no blocked sub-issue, green CI, and repo auto-merge enabled — the activation switch.
+_Avoid_: auto-merge rules, merge config
+
+**Hold**:
+A gate outcome marking a PR as needing maintainer attention — never a failure, so no `agent:blocked` and no failed run — with its reasons posted as one comment on the PR; the PR stays ready to merge by hand.
+_Avoid_: block, reject
+
+**Door**:
+Whether a change is one-way (hard to reverse) or two-way (cheap to revert); the implementer declares it in the PR's Merge Danger, the reviewer assesses it independently, and a disagreement holds the PR.
+_Avoid_: reversibility, merge risk

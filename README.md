@@ -1,6 +1,6 @@
 # tenderagent
 
-Label-driven agent automation: triaged leaf issues are implemented and reviewed by AFK agents in GitHub Actions; humans triage, review, and merge.
+Label-driven agent automation: triaged leaf issues are implemented and reviewed by AFK agents in GitHub Actions, and a deterministic merge gate merges two-way-door PRs or holds the rest for a human — humans triage and review, the gate and the human share the merge.
 
 See [GLOSSARY.md](./GLOSSARY.md) for the automation vocabulary.
 

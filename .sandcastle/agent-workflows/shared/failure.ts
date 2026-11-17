@@ -49,6 +49,27 @@ export const blockedLabelOps = (
   add: assertOnlyAgentLabels([BLOCKED_LABEL]),
 });
 
+/**
+ * The label transition for a merge-gate outcome (spec #36): exactly one
+ * outcome label is ever present. A merge clears a stale hold and applies
+ * `agent:merge`; a hold clears a stale merge request and applies
+ * `agent:hold`. Without the removals a retried PR claims both outcomes at
+ * once, and the maintainer's `agent:hold` queue keeps listing a PR the gate
+ * has since cleared.
+ */
+export const mergeGateLabelOps = (
+  outcome: "merge" | "hold",
+): { remove: string[]; add: string[] } =>
+  outcome === "merge"
+    ? {
+        remove: assertOnlyAgentLabels([HOLD_LABEL]),
+        add: assertOnlyAgentLabels([MERGE_LABEL]),
+      }
+    : {
+        remove: assertOnlyAgentLabels([MERGE_LABEL]),
+        add: assertOnlyAgentLabels([HOLD_LABEL]),
+      };
+
 /** What a blocked comment is posted on: an issue or a PR. */
 export type BlockedSubject = { kind: "issue" | "pr"; number: number };
 

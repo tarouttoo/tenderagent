@@ -5,6 +5,7 @@ import {
   formatBlockedComment,
   HOLD_LABEL,
   MERGE_LABEL,
+  mergeGateLabelOps,
 } from "./failure";
 
 describe("assertOnlyAgentLabels", () => {
@@ -131,5 +132,37 @@ describe("merge gate lifecycle labels (spec #36)", () => {
 
   it("keeps both inside the agent:* invariant", () => {
     expect(() => assertOnlyAgentLabels([MERGE_LABEL, HOLD_LABEL])).not.toThrow();
+  });
+});
+
+describe("mergeGateLabelOps", () => {
+  it("applies agent:merge and clears a stale hold on a merge", () => {
+    expect(mergeGateLabelOps("merge")).toEqual({
+      remove: ["agent:hold"],
+      add: ["agent:merge"],
+    });
+  });
+
+  it("applies agent:hold and clears a stale merge request on a hold", () => {
+    expect(mergeGateLabelOps("hold")).toEqual({
+      remove: ["agent:merge"],
+      add: ["agent:hold"],
+    });
+  });
+
+  it("never carries both outcome labels at once", () => {
+    for (const outcome of ["merge", "hold"] as const) {
+      const { remove, add } = mergeGateLabelOps(outcome);
+      expect(remove.filter((label) => add.includes(label))).toEqual([]);
+      expect([...remove, ...add]).toHaveLength(2);
+    }
+  });
+
+  it("only ever writes agent:* labels (invariant)", () => {
+    for (const outcome of ["merge", "hold"] as const) {
+      const ops = mergeGateLabelOps(outcome);
+      expect(() => assertOnlyAgentLabels(ops.remove)).not.toThrow();
+      expect(() => assertOnlyAgentLabels(ops.add)).not.toThrow();
+    }
   });
 });
